@@ -1,0 +1,8 @@
+.DS_Store
+node_modules
+.next
+.vercel
+dist
+worker/.wrangler
+.env.local
+config/.secrets.json

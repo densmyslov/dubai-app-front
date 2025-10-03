@@ -1,0 +1,38 @@
+[
+  {
+    "period": "2024-01-01",
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "median_rent_ppm2": 190
+  },
+  {
+    "period": "2024-02-01",
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "median_rent_ppm2": 192
+  },
+  {
+    "period": "2024-03-01",
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "median_rent_ppm2": 195
+  },
+  {
+    "period": "2024-04-01",
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "median_rent_ppm2": 197
+  },
+  {
+    "period": "2024-05-01",
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "median_rent_ppm2": 198
+  },
+  {
+    "period": "2024-06-01",
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "median_rent_ppm2": 200
+  }
+]

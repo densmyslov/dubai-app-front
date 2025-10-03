@@ -1,0 +1,26 @@
+[
+  {
+    "area": "Dubai Marina",
+    "property_sub_type": "Apartment",
+    "net_yield": 0.073,
+    "price_to_rent": 22.5,
+    "offplan_premium": 0.06,
+    "turnover_velocity": 0.18
+  },
+  {
+    "area": "Downtown Dubai",
+    "property_sub_type": "Apartment",
+    "net_yield": 0.065,
+    "price_to_rent": 24.1,
+    "offplan_premium": 0.08,
+    "turnover_velocity": 0.15
+  },
+  {
+    "area": "Jumeirah Village Circle",
+    "property_sub_type": "Apartment",
+    "net_yield": 0.081,
+    "price_to_rent": 20.7,
+    "offplan_premium": -0.02,
+    "turnover_velocity": 0.22
+  }
+]
