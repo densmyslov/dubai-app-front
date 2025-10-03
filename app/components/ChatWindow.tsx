@@ -66,17 +66,22 @@ export default function ChatWindow() {
 
             try {
               const parsed = JSON.parse(data);
-              // Support Lambda SSE format: { type: 'chunk', text: '...' }
               if (parsed.type === 'chunk' && parsed.text) {
-                assistantMessage += parsed.text;
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    role: 'assistant',
-                    content: assistantMessage,
-                  };
-                  return updated;
-                });
+                // Stream character by character
+                const text = parsed.text;
+                for (let i = 0; i < text.length; i++) {
+                  assistantMessage += text[i];
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = {
+                      role: 'assistant',
+                      content: assistantMessage,
+                    };
+                    return updated;
+                  });
+                  // Delay between each character for typing effect
+                  await new Promise(resolve => setTimeout(resolve, 20));
+                }
               } else if (parsed.type === 'error') {
                 console.error('Lambda error:', parsed.error);
                 throw new Error(parsed.error);
