@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 
 type Series = { name: string; data: number[] };
@@ -14,19 +14,53 @@ export default function ChartCard({
   series: Series[];
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    };
+    checkDarkMode();
+
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!ref.current) return;
     const chart = echarts.init(ref.current);
     chart.setOption({
-      title: { text: title },
-      tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: categories },
-      yAxis: { type: 'value' },
+      backgroundColor: 'transparent',
+      title: {
+        text: title,
+        textStyle: { color: isDark ? '#e2e8f0' : '#1e293b' }
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+        borderColor: isDark ? '#475569' : '#e2e8f0',
+        textStyle: { color: isDark ? '#e2e8f0' : '#1e293b' }
+      },
+      xAxis: {
+        type: 'category',
+        data: categories,
+        axisLine: { lineStyle: { color: isDark ? '#475569' : '#cbd5e1' } },
+        axisLabel: { color: isDark ? '#94a3b8' : '#64748b' }
+      },
+      yAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: isDark ? '#475569' : '#cbd5e1' } },
+        axisLabel: { color: isDark ? '#94a3b8' : '#64748b' },
+        splitLine: { lineStyle: { color: isDark ? '#334155' : '#e2e8f0' } }
+      },
       series: series.map(s => ({ name: s.name, type: 'line', data: s.data }))
     });
     const onResize = () => chart.resize();
     window.addEventListener('resize', onResize);
     return () => { window.removeEventListener('resize', onResize); chart.dispose(); };
-  }, [title, categories, series]);
-  return <div className="rounded-2xl bg-white p-4 shadow" ref={ref} style={{height: 360}} />;
+  }, [title, categories, series, isDark]);
+
+  return <div className="rounded-2xl bg-white dark:bg-slate-800 p-4 shadow" ref={ref} style={{height: 360}} />;
 }

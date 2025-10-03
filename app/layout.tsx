@@ -1,6 +1,7 @@
 import './globals.css';
 import React from 'react';
-import ChatWindow from './components/ChatWindow';
+import { ThemeProvider } from './components/ThemeProvider';
+import LayoutContent from './components/LayoutContent';
 
 export const metadata = {
   title: 'Dubai RE Investor Dashboard',
@@ -10,15 +11,10 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="mx-auto max-w-6xl p-6">
-          <header className="mb-6">
-            <h1 className="text-2xl font-semibold">Dubai Investor Dashboard</h1>
-            <p className="text-sm text-slate-600">Median rents, price-to-rent, league table</p>
-          </header>
-          {children}
-        </div>
-        <ChatWindow />
+      <body className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors">
+        <ThemeProvider>
+          <LayoutContent>{children}</LayoutContent>
+        </ThemeProvider>
       </body>
     </html>
   );

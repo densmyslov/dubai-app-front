@@ -54,11 +54,11 @@ export default async function Page() {
         <ChartCard title="Price-to-Rent (years) — sample" categories={ptrCat} series={[{ name: 'P/R', data: ptrData }]} />
       </div>
 
-      <section className="rounded-2xl bg-white p-4 shadow">
+      <section className="rounded-2xl bg-white dark:bg-slate-800 p-4 shadow">
         <h2 className="text-lg font-semibold mb-3">Community League Table (sample)</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="text-left text-slate-600">
+            <thead className="text-left text-slate-600 dark:text-slate-400">
               <tr>
                 <th className="py-2 pr-4">Area</th>
                 <th className="py-2 pr-4">Subtype</th>
@@ -70,7 +70,7 @@ export default async function Page() {
             </thead>
             <tbody>
               {(league || []).slice(0, 20).map((row: any, i: number) => (
-                <tr key={i} className="border-t">
+                <tr key={i} className="border-t border-slate-200 dark:border-slate-700">
                   <td className="py-2 pr-4">{row.area}</td>
                   <td className="py-2 pr-4">{row.property_sub_type}</td>
                   <td className="py-2 pr-4">{(row.net_yield*100).toFixed(2)}%</td>

@@ -99,124 +99,42 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ---- tolerant streaming: handle SSE and non-SSE upstreams
+    // Parse Lambda response (it returns {statusCode, headers, body})
+    const lambdaResponse = await upstream.json();
+    const sseBody = lambdaResponse.body || '';
+
+    // Stream the SSE body to client
     const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    const upstreamCT = upstream.headers.get('content-type') || '';
-    const isUpstreamSSE = upstreamCT.includes('text/event-stream');
-
-    // If caller asked for non-streaming, just pass upstream through verbatim
-    if (body.stream === false) {
-      const text = await upstream.text();
-      return new Response(text, {
-        status: 200,
-        headers: { 'Content-Type': upstreamCT || 'application/json' },
-      });
-    }
-
-    // Otherwise, stream to the client as SSE. If upstream isn't SSE, wrap chunks.
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const readerAbort = new AbortController();
-        const reader = upstream.body?.getReader({ signal: readerAbort.signal });
-        if (!reader) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'No upstream body' })}\n\n`)
-          );
-          controller.close();
-          return;
-        }
+        // Parse SSE events from the body string
+        const events = sseBody.split('\n\n').filter((e: string) => e.trim());
 
-        let idleTimer: NodeJS.Timeout | null = null;
-        const resetIdleTimer = () => {
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            try {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'Upstream idle timeout' })}\n\n`)
-              );
-            } catch {}
-            try { reader.cancel('idle timeout'); } catch {}
-            try { readerAbort.abort(); } catch {}
-            controller.close();
-          }, IDLE_TIMEOUT_MS);
-        };
-
-        const flushSSE = (event: string) => {
-          if (!event.trim()) return;
+        for (const event of events) {
           if (event.startsWith('data: ')) {
             try {
               const data = JSON.parse(event.substring(6));
-              if (data.type === 'chunk') {
+
+              // Forward the event as-is (Lambda already sends {type: 'chunk', text: '...'})
+              if (data.type === 'chunk' || data.type === 'done' || data.type === 'error') {
                 controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'chunk', text: data.text ?? '' })}\n\n`)
+                  encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
                 );
-              } else if (data.type === 'done') {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'done', usage: data.usage })}\n\n`)
-                );
-              } else if (data.type === 'error') {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'error', error: data.error })}\n\n`)
-                );
-              } else {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
               }
-            } catch {
-              const raw = event.substring(6);
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'chunk', text: raw })}\n\n`)
-              );
-            }
-          } else {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'chunk', text: event })}\n\n`)
-            );
-          }
-        };
-
-        try {
-          let buffer = '';
-          resetIdleTimer();
-
-          while (true) {
-            const { done, value } = await reader.read();
-            resetIdleTimer();
-            if (done) break;
-            if (!value) continue;
-
-            const text = decoder.decode(value, { stream: true });
-
-            if (isUpstreamSSE) {
-              buffer += text;
-              const events = buffer.split('\n\n');
-              buffer = events.pop() || '';
-              for (const evt of events) flushSSE(evt);
-            } else {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'chunk', text })}\n\n`)
-              );
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e);
             }
           }
-
-          if (isUpstreamSSE && buffer.trim()) flushSSE(buffer);
-
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
-        } catch (error: any) {
-          const msg = error?.name === 'AbortError' ? 'Stream aborted' : (error?.message || 'Stream failure');
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: msg })}\n\n`));
-        } finally {
-          if (idleTimer) clearTimeout(idleTimer);
-          controller.close();
         }
+
+        controller.close();
       },
     });
 
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
+        'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       },
     });
