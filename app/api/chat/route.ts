@@ -33,19 +33,31 @@ export async function POST(request: NextRequest) {
       return new Response('LAMBDA_FUNCTION_URL not configured', { status: 500 });
     }
 
-    // normalise input
+    // Extract conversation history and current message
     let messageText: string;
-    if (typeof body.message === 'string' && body.message.length > 0) {
-      messageText = body.message;
-    } else if (Array.isArray(body.messages) && body.messages.length > 0) {
+    let conversationHistory: Message[] = [];
+
+    if (Array.isArray(body.messages) && body.messages.length > 0) {
+      // Messages array provided - extract history and current message
       const lastMessage = body.messages[body.messages.length - 1];
       if (!lastMessage || lastMessage.role !== 'user') {
-        return new Response('No user message found', { status: 400 });
+        return new Response('Last message must be from user', { status: 400 });
       }
       messageText = lastMessage.content;
+
+      // All messages except the last one become conversation history
+      if (body.messages.length > 1) {
+        conversationHistory = body.messages.slice(0, -1);
+      }
+    } else if (typeof body.message === 'string' && body.message.length > 0) {
+      // Single message provided - no history
+      messageText = body.message;
+      conversationHistory = [];
     } else {
       return new Response('Invalid request: message or messages required', { status: 400 });
     }
+
+    console.log(`Processing: ${conversationHistory.length} history messages + 1 new message`);
 
     // headers + auth
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -68,6 +80,7 @@ export async function POST(request: NextRequest) {
         headers,
         body: JSON.stringify({
           message: messageText,
+          conversation_history: conversationHistory,
           stream: body.stream !== false, // default true
           model: body.model || process.env.CLAUDE_MODEL || null,
           max_tokens: body.max_tokens || 4096,
