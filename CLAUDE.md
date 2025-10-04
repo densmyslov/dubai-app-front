@@ -158,7 +158,7 @@ The chat route parses this and streams SSE events to the client.
 
 ### Styling Guidelines
 - Use Tailwind utility classes
-- Always include dark mode variants: `dark:bg-slate-800`
+- **Always include dark mode variants for every frontend feature**: `dark:bg-slate-800`, `dark:text-slate-100`, etc.
 - Use slate color palette for consistency
 - Maintain responsive design: `md:`, `lg:` breakpoints
 
