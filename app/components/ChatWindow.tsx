@@ -12,7 +12,12 @@ export default function ChatWindow() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -21,6 +26,10 @@ export default function ChatWindow() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  if (!mounted) {
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,25 +144,47 @@ export default function ChatWindow() {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
         <h3 className="font-semibold text-slate-900 dark:text-slate-100">Chat with Claude</h3>
-        <button
-          onClick={() => setIsOpen(false)}
-          className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
-          aria-label="Close chat"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMessages([])}
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+            aria-label="Clear chat history"
+            title="Clear chat history"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
+          <button
+            onClick={() => setIsOpen(false)}
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+            aria-label="Close chat"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
