@@ -14,6 +14,7 @@ export default function ChatWindow() {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -31,6 +32,14 @@ export default function ChatWindow() {
     return null;
   }
 
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -40,11 +49,15 @@ export default function ChatWindow() {
     setInput('');
     setIsLoading(true);
 
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [...messages, userMessage] }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -61,7 +74,15 @@ export default function ChatWindow() {
       let assistantMessage = '';
       setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
+      const signal = abortControllerRef.current.signal;
+
       while (true) {
+        // Check if aborted before reading
+        if (signal.aborted) {
+          reader.cancel();
+          return;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -69,6 +90,11 @@ export default function ChatWindow() {
         const lines = chunk.split('\n');
 
         for (const line of lines) {
+          if (signal.aborted) {
+            reader.cancel();
+            return;
+          }
+
           if (line.startsWith('data: ')) {
             const data = line.slice(6);
             if (data === '[DONE]') continue;
@@ -79,6 +105,12 @@ export default function ChatWindow() {
                 // Stream character by character
                 const text = parsed.text;
                 for (let i = 0; i < text.length; i++) {
+                  // Check if aborted during character streaming
+                  if (signal.aborted) {
+                    reader.cancel();
+                    return;
+                  }
+
                   assistantMessage += text[i];
                   setMessages((prev) => {
                     const updated = [...prev];
@@ -89,19 +121,47 @@ export default function ChatWindow() {
                     return updated;
                   });
                   // Delay between each character for typing effect
-                  await new Promise(resolve => setTimeout(resolve, 20));
+                  await new Promise((resolve, reject) => {
+                    if (signal.aborted) {
+                      reject(new DOMException('Aborted', 'AbortError'));
+                      return;
+                    }
+                    const timeout = setTimeout(() => {
+                      if (signal.aborted) {
+                        reject(new DOMException('Aborted', 'AbortError'));
+                      } else {
+                        resolve(undefined);
+                      }
+                    }, 20);
+
+                    // Clean up timeout if aborted
+                    signal.addEventListener('abort', () => {
+                      clearTimeout(timeout);
+                      reject(new DOMException('Aborted', 'AbortError'));
+                    }, { once: true });
+                  });
                 }
               } else if (parsed.type === 'error') {
                 console.error('Lambda error:', parsed.error);
                 throw new Error(parsed.error);
               }
             } catch (e) {
+              // Re-throw abort errors
+              if (e instanceof DOMException && e.name === 'AbortError') {
+                throw e;
+              }
               // Skip invalid JSON
             }
           }
         }
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      // Don't show error if request was aborted by user
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Request cancelled by user');
+        return;
+      }
+
       console.error('Chat error:', error);
       setMessages((prev) => [
         ...prev,
@@ -112,6 +172,7 @@ export default function ChatWindow() {
       ]);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -227,13 +288,15 @@ export default function ChatWindow() {
             className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 dark:disabled:bg-slate-800"
           />
           <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
+            type={isLoading ? 'button' : 'submit'}
+            onClick={isLoading ? handleStop : undefined}
+            disabled={!isLoading && !input.trim()}
             className="bg-blue-600 text-white rounded-full px-4 py-2 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+            title={isLoading ? 'Stop generating' : 'Send message'}
           >
             {isLoading ? (
               <svg
-                className="animate-spin h-5 w-5"
+                className="animate-spin h-5 w-5 cursor-pointer"
                 fill="none"
                 viewBox="0 0 24 24"
               >
