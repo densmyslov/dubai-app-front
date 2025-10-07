@@ -1,5 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest } from 'next/server';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -59,6 +60,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`Processing: ${conversationHistory.length} history messages + 1 new message`);
 
+    // Generate query_id and set user_id
+    const queryId = crypto.randomUUID();
+    const userId = '0000';
+
+    console.log(`Query ID: ${queryId}, User ID: ${userId}`);
+
     // headers + auth
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
     const clientApiKey = request.headers.get('x-api-key');
@@ -84,6 +91,10 @@ export async function POST(request: NextRequest) {
           stream: body.stream !== false, // default true
           model: body.model || process.env.CLAUDE_MODEL || null,
           max_tokens: body.max_tokens || 4096,
+          metadata: {
+            query_id: queryId,
+            user_id: userId,
+          },
         }),
         signal: ac.signal,
       });
@@ -106,8 +117,69 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Lambda is now streaming SSE directly - pass through
-    return new Response(upstream.body, {
+    // Transform the SSE stream to inject metadata
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    const transformedStream = new ReadableStream({
+      async start(controller) {
+        const reader = upstream.body?.getReader();
+        if (!reader) {
+          controller.close();
+          return;
+        }
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') {
+                  controller.enqueue(encoder.encode(line + '\n'));
+                  continue;
+                }
+
+                try {
+                  const parsed = JSON.parse(data);
+
+                  // Inject metadata into every event
+                  if (!parsed.metadata) {
+                    parsed.metadata = {};
+                  }
+                  parsed.metadata.query_id = queryId;
+                  parsed.metadata.user_id = userId;
+
+                  const modifiedLine = 'data: ' + JSON.stringify(parsed) + '\n';
+                  controller.enqueue(encoder.encode(modifiedLine));
+
+                  // Log for debugging
+                  console.log('Injected metadata:', { query_id: queryId, user_id: userId, type: parsed.type });
+                } catch (parseError) {
+                  // If not valid JSON, pass through as-is
+                  console.log('Failed to parse SSE data, passing through:', data.substring(0, 50));
+                  controller.enqueue(encoder.encode(line + '\n'));
+                }
+              } else if (line) {
+                // Pass through other lines (like empty lines)
+                controller.enqueue(encoder.encode(line + '\n'));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Stream transform error:', error);
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(transformedStream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',

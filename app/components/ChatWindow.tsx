@@ -179,6 +179,12 @@ export default function ChatWindow() {
 
             try {
               const parsed = JSON.parse(data);
+
+              // Log metadata if present
+              if (parsed.metadata) {
+                console.log('Received metadata:', parsed.metadata);
+              }
+
               if (parsed.type === 'chunk' && parsed.text) {
                 // Stream character by character
                 const text = parsed.text;
@@ -219,6 +225,9 @@ export default function ChatWindow() {
                     }, { once: true });
                   });
                 }
+              } else if (parsed.type === 'done') {
+                // Handle done event with metadata
+                console.log('Conversation complete. Final metadata:', parsed.metadata);
               } else if (parsed.type === 'error') {
                 console.error('Lambda error:', parsed.error);
                 throw new Error(parsed.error);
