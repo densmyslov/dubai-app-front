@@ -47,84 +47,89 @@ Have your ETL write JSON snapshots to R2 (or any https). Point the Worker to tho
 
 ## Webhook Integration
 
-The chat window can receive real-time messages from external services (e.g., AWS Lambda, price alerts, notifications) via webhook.
+The chat window can receive real-time messages from external services via webhook. Messages are delivered instantly through Server-Sent Events (SSE).
 
-### Setup
+### Quick Setup
 
-1. **Set webhook secret** (optional but recommended):
+1. **Set webhook secret** (optional but recommended for production):
    ```bash
    # .env.local
    WEBHOOK_SECRET=your-random-secret-key
    ```
 
-2. **Send messages from external services**:
-
-   **From AWS Lambda (Python):**
-   ```python
-   import json
-   import urllib3
-
-   def lambda_handler(event, context):
-       http = urllib3.PoolManager()
-       response = http.request(
-           'POST',
-           'https://your-app.com/api/webhook',
-           body=json.dumps({"message": "Price alert: Dubai Marina -5%!"}),
-           headers={
-               'Content-Type': 'application/json',
-               'X-Webhook-Secret': 'your-secret-key'
-           }
-       )
-       return {'statusCode': 200}
-   ```
-
-   **From AWS Lambda (Node.js):**
-   ```javascript
-   export const handler = async (event) => {
-       const response = await fetch('https://your-app.com/api/webhook', {
-           method: 'POST',
-           headers: {
-               'Content-Type': 'application/json',
-               'X-Webhook-Secret': process.env.WEBHOOK_SECRET
-           },
-           body: JSON.stringify({
-               message: 'New property listed in Dubai Marina!'
-           })
-       });
-       return { statusCode: 200 };
-   };
+2. **Send messages** via POST request:
+   ```bash
+   curl -X POST https://your-app.com/api/webhook \
+     -H "Content-Type: application/json" \
+     -H "X-Webhook-Secret: your-secret-key" \
+     -d '{"message": "Hello from external service!"}'
    ```
 
 3. **Messages appear instantly** in the chat window with a purple "Webhook" badge
 
-### API Reference
+### Architecture
 
-**Endpoint:** `POST /api/webhook`
-
-**Headers:**
-- `Content-Type: application/json`
-- `X-Webhook-Secret: <your-secret>` (if `WEBHOOK_SECRET` is set)
-
-**Body:**
-```json
-{
-  "message": "Your message text",
-  "sessionId": "optional-session-id"
-}
+```
+External Service → POST /api/webhook → Message Queue → SSE Stream → Chat Window
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "messageId": "1234567890-abc123",
-  "timestamp": 1234567890000
-}
+### API Endpoints
+
+**POST /api/webhook** - Send a message
+- Headers: `Content-Type: application/json`, `X-Webhook-Secret: <secret>`
+- Body: `{"message": "text", "sessionId": "optional"}`
+- Response: `{"success": true, "messageId": "...", "timestamp": ...}`
+
+**GET /api/webhook** - Health check
+- Response: `{"status": "ok", "activeConnections": 3}`
+
+**GET /api/webhook/stream** - SSE stream (used internally by chat window)
+- Query: `?sessionId=optional`
+- Returns Server-Sent Events with webhook messages
+
+### Use Cases
+
+- **Real Estate Alerts**: Price drops, new listings, market updates
+- **Notifications**: System alerts, important updates
+- **Third-Party Integrations**: Zapier, IFTTT, custom automations
+- **Admin Broadcasts**: Send messages to all active users
+
+### Examples
+
+**Python (AWS Lambda):**
+```python
+import requests
+
+def send_webhook(message):
+    return requests.post(
+        "https://your-app.com/api/webhook",
+        json={"message": message},
+        headers={"X-Webhook-Secret": "your-secret"}
+    ).json()
 ```
 
-**Health Check:** `GET /api/webhook`
+**Node.js (AWS Lambda):**
+```javascript
+export const handler = async () => {
+    await fetch('https://your-app.com/api/webhook', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Webhook-Secret': process.env.WEBHOOK_SECRET
+        },
+        body: JSON.stringify({message: 'New property listed!'})
+    });
+};
+```
 
-See [WEBHOOK.md](WEBHOOK.md) for detailed integration guide with examples for Python, Node.js, cURL, and more.
+### Security & Production
+
+- **Always use WEBHOOK_SECRET** in production
+- **HTTPS only** for webhook endpoints
+- **Rate limiting**: Consider implementing for high-traffic scenarios
+- **Scaling**: For production, consider replacing in-memory queue with Redis or Cloudflare Durable Objects
+
+See [app/api/webhook/WEBHOOK.md](app/api/webhook/WEBHOOK.md) for the complete integration guide with advanced features, session targeting, troubleshooting, and deployment considerations.
 
 ## Notes
 - Keep heavy compute in ETL. The site only fetches pre-aggregated JSON.
