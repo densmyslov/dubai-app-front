@@ -25,6 +25,7 @@ export default function ChatWindow() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
   // --------------------------------------------------------------------------
   // Refs
@@ -34,6 +35,7 @@ export default function ChatWindow() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const webhookStreamRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // --------------------------------------------------------------------------
   // Effects
@@ -59,37 +61,84 @@ export default function ChatWindow() {
 
   // Subscribe to webhook messages via SSE when chat is open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setConnectionStatus('disconnected');
+      return;
+    }
 
-    // Connect to webhook stream
-    const eventSource = new EventSource('/api/webhook/stream');
-    webhookStreamRef.current = eventSource;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    const reconnectDelay = 3000; // 3 seconds
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'webhook_message') {
-          // Add webhook message as assistant message
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: data.content },
-          ]);
-        }
-      } catch (error) {
-        console.error('Error parsing webhook message:', error);
+    const connectToWebhookStream = () => {
+      console.log('Connecting to webhook stream...');
+      setConnectionStatus('connecting');
+      
+      // Clear any existing connection
+      if (webhookStreamRef.current) {
+        webhookStreamRef.current.close();
       }
+
+      const eventSource = new EventSource('/api/webhook/stream');
+      webhookStreamRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        console.log('Webhook stream connected');
+        setConnectionStatus('connected');
+        reconnectAttempts = 0; // Reset attempts on successful connection
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'webhook_message') {
+            // Add webhook message as assistant message
+            setMessages((prev) => [
+              ...prev,
+              { role: 'assistant', content: data.content },
+            ]);
+          } else if (data.type === 'connected') {
+            console.log('SSE connection confirmed');
+          }
+        } catch (error) {
+          console.error('Error parsing webhook message:', error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('Webhook stream error:', error);
+        setConnectionStatus('disconnected');
+        eventSource.close();
+
+        // Auto-reconnect if chat is still open and we haven't exceeded max attempts
+        if (isOpen && reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          console.log(`Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectToWebhookStream();
+          }, reconnectDelay);
+        } else if (reconnectAttempts >= maxReconnectAttempts) {
+          console.error('Max reconnection attempts reached. Please refresh the page.');
+        }
+      };
     };
 
-    eventSource.onerror = (error) => {
-      console.error('Webhook stream error:', error);
-      eventSource.close();
-    };
+    // Initial connection
+    connectToWebhookStream();
 
     // Cleanup on unmount or when chat closes
     return () => {
-      eventSource.close();
-      webhookStreamRef.current = null;
+      if (webhookStreamRef.current) {
+        webhookStreamRef.current.close();
+        webhookStreamRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      setConnectionStatus('disconnected');
     };
   }, [isOpen]);
 
@@ -301,7 +350,26 @@ export default function ChatWindow() {
       {/* Header */}
       {/* -------------------------------------------------------------------- */}
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-        <h3 className="font-semibold text-slate-900 dark:text-slate-100">Chat with Claude</h3>
+        <div className="flex items-center gap-3">
+          <h3 className="font-semibold text-slate-900 dark:text-slate-100">Chat with Claude</h3>
+          {/* Connection Status Indicator */}
+          <div className="flex items-center gap-1">
+            <div 
+              className={`w-2 h-2 rounded-full ${
+                connectionStatus === 'connected' 
+                  ? 'bg-green-400 animate-pulse' 
+                  : connectionStatus === 'connecting'
+                  ? 'bg-yellow-400 animate-pulse'
+                  : 'bg-red-400'
+              }`}
+              title={`Webhook stream: ${connectionStatus}`}
+            />
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {connectionStatus === 'connected' ? 'Live' : 
+               connectionStatus === 'connecting' ? 'Connecting...' : 'Offline'}
+            </span>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setMessages([])}
