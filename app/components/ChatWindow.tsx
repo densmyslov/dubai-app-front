@@ -7,7 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 // ============================================================================
 
 interface Message {
-  role: 'user' | 'assistant' | 'webhook';
+  role: 'user' | 'assistant';
   content: string;
 }
 
@@ -70,10 +70,10 @@ export default function ChatWindow() {
         const data = JSON.parse(event.data);
 
         if (data.type === 'webhook_message') {
-          // Add webhook message to chat
+          // Add webhook message as assistant message
           setMessages((prev) => [
             ...prev,
-            { role: 'webhook', content: data.content },
+            { role: 'assistant', content: data.content },
           ]);
         }
       } catch (error) {
@@ -365,20 +365,9 @@ export default function ChatWindow() {
               className={`max-w-[80%] rounded-2xl px-4 py-2 ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white'
-                  : msg.role === 'webhook'
-                  ? 'bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-100 border-2 border-purple-300 dark:border-purple-700'
                   : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
               }`}
             >
-              {msg.role === 'webhook' && (
-                <div className="flex items-center gap-1 mb-1 text-xs font-semibold text-purple-600 dark:text-purple-400">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
-                  </svg>
-                  Webhook
-                </div>
-              )}
               <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
             </div>
           </div>
