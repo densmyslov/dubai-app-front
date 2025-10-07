@@ -19,16 +19,35 @@ import { messageQueue } from '../../lib/messageQueue';
 //     }
 // ============================================================================
 
+// Handle CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Webhook-Secret',
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Optional: Check webhook secret for security
     const webhookSecret = process.env.WEBHOOK_SECRET;
     if (webhookSecret) {
       const providedSecret = request.headers.get('X-Webhook-Secret');
+      console.log('Expected secret:', webhookSecret);
+      console.log('Provided secret:', providedSecret);
+      console.log('Match:', providedSecret === webhookSecret);
       if (providedSecret !== webhookSecret) {
         return NextResponse.json(
           { error: 'Unauthorized' },
-          { status: 401 }
+          {
+            status: 401,
+            headers: {
+              'Access-Control-Allow-Origin': '*',
+            },
+          }
         );
       }
     }
@@ -44,7 +63,12 @@ export async function POST(request: NextRequest) {
       console.error('Received body:', text);
       return NextResponse.json(
         { error: 'Invalid JSON' },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
       );
     }
 
@@ -53,31 +77,55 @@ export async function POST(request: NextRequest) {
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
         { error: 'Message is required and must be a string' },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
       );
     }
 
     // Add message to queue
     const webhookMessage = messageQueue.addMessage(message.trim(), sessionId);
 
-    return NextResponse.json({
-      success: true,
-      messageId: webhookMessage.id,
-      timestamp: webhookMessage.timestamp,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        messageId: webhookMessage.id,
+        timestamp: webhookMessage.timestamp,
+      },
+      {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+        },
+      }
+    );
   } catch (error) {
     console.error('Webhook error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+        },
+      }
     );
   }
 }
 
 // Health check endpoint
 export async function GET() {
-  return NextResponse.json({
-    status: 'ok',
-    activeConnections: messageQueue.getListenerCount(),
-  });
+  return NextResponse.json(
+    {
+      status: 'ok',
+      activeConnections: messageQueue.getListenerCount(),
+    },
+    {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      },
+    }
+  );
 }
