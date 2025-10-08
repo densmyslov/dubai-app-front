@@ -28,11 +28,19 @@ npm run dev
 2. Build command: `npm run build:cf` (produces `.open-next/` automatically)
 3. Build output directory: `.open-next`
 4. Node version: 18 or 20.
-5. Add required env vars (e.g. `WEBHOOK_SECRET`, `LAMBDA_FUNCTION_URL`, `CLAUDE_MODEL`, `NEXT_PUBLIC_API_BASE`).
+5. Package manager: `npm@10.9.2` (the repo’s lockfile was generated with this version).
+6. Add required env vars/secrets (`WEBHOOK_SECRET`, `LAMBDA_FUNCTION_URL`, `KEY`, `CLAUDE_MODEL`, `NEXT_PUBLIC_API_BASE`).
+    ```bash
+    wrangler pages project secret put LAMBDA_FUNCTION_URL
+    wrangler pages project secret put KEY
+    # repeat for any other secrets you need
+    ```
+    > Without `LAMBDA_FUNCTION_URL` and `KEY` the chat endpoint returns `LAMBDA_FUNCTION_URL not configured` / upstream auth errors.
 
 #### Option B — Manual deploy from your machine
 ```bash
 npx wrangler login                      # once per machine
+npx npm@10.9.2 install                   # keep package-lock compatible with Pages build runner
 npm run deploy:cf -- --project-name YOUR_PAGES_PROJECT
 # optional: add --branch main to target a non-default branch
 ```

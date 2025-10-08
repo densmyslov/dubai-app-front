@@ -188,7 +188,10 @@ export default function ChatWindow() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get response');
+        const errorText = await response.text().catch(() => '');
+        const trimmed = errorText.trim();
+        const message = trimmed || `Request failed with status ${response.status}`;
+        throw new Error(message);
       }
 
       const reader = response.body?.getReader();
@@ -299,11 +302,12 @@ export default function ChatWindow() {
       }
 
       console.error('Chat error:', error);
+      const friendlyMessage = error instanceof Error ? error.message : 'Unexpected error occurred.';
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
+          content: `Sorry, I ran into a problem: ${friendlyMessage}`,
         },
       ]);
     } finally {
