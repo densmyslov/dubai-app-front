@@ -15,29 +15,10 @@ export interface WebhookMessage {
   sessionId?: string;
 }
 
-interface BroadcastEnvelope {
-  type: 'webhook_message';
-  message: WebhookMessage;
-}
-
 class MessageQueue {
   private messages: WebhookMessage[] = [];
   private listeners: Set<(message: WebhookMessage) => void> = new Set();
   private readonly MAX_MESSAGES = 100;
-  private channel?: BroadcastChannel;
-
-  constructor(channel?: BroadcastChannel) {
-    this.channel = channel;
-
-    if (this.channel) {
-      this.channel.addEventListener('message', (event) => {
-        const data = event.data as BroadcastEnvelope | undefined;
-        if (!data || data.type !== 'webhook_message') return;
-
-        this.insertMessage(data.message, { broadcast: false });
-      });
-    }
-  }
 
   addMessage(content: string, sessionId?: string): WebhookMessage {
     const message: WebhookMessage = {
@@ -47,7 +28,14 @@ class MessageQueue {
       sessionId,
     };
 
-    return this.insertMessage(message, { broadcast: true });
+    this.messages.push(message);
+
+    if (this.messages.length > this.MAX_MESSAGES) {
+      this.messages.shift();
+    }
+
+    this.listeners.forEach((listener) => listener(message));
+    return message;
   }
 
   subscribe(callback: (message: WebhookMessage) => void): () => void {
@@ -74,56 +62,14 @@ class MessageQueue {
   getListenerCount(): number {
     return this.listeners.size;
   }
-
-  private insertMessage(
-    message: WebhookMessage,
-    { broadcast }: { broadcast: boolean }
-  ): WebhookMessage {
-    const exists = this.messages.some((m) => m.id === message.id);
-    if (!exists) {
-      this.messages.push(message);
-
-      if (this.messages.length > this.MAX_MESSAGES) {
-        this.messages.shift();
-      }
-    }
-
-    this.listeners.forEach((listener) => listener(message));
-
-    if (broadcast && this.channel) {
-      const envelope: BroadcastEnvelope = {
-        type: 'webhook_message',
-        message,
-      };
-
-      try {
-        this.channel.postMessage(envelope);
-      } catch (error) {
-        console.error('BroadcastChannel postMessage failed:', error);
-      }
-    }
-
-    return message;
-  }
 }
 
 const globalForMessageQueue = globalThis as typeof globalThis & {
   __WEBHOOK_MESSAGE_QUEUE__?: MessageQueue;
-  __WEBHOOK_BROADCAST_CHANNEL__?: BroadcastChannel;
 };
 
-const hasBroadcast = typeof BroadcastChannel !== 'undefined';
-const broadcastChannel = hasBroadcast
-  ? globalForMessageQueue.__WEBHOOK_BROADCAST_CHANNEL__ ??
-    new BroadcastChannel('webhook-message-channel')
-  : undefined;
-
-if (broadcastChannel && !globalForMessageQueue.__WEBHOOK_BROADCAST_CHANNEL__) {
-  globalForMessageQueue.__WEBHOOK_BROADCAST_CHANNEL__ = broadcastChannel;
-}
-
 export const messageQueue =
-  globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__ ?? new MessageQueue(broadcastChannel);
+  globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__ ?? new MessageQueue();
 
 if (!globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__) {
   globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__ = messageQueue;
