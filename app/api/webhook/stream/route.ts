@@ -35,19 +35,27 @@ export async function GET(request: NextRequest) {
   const sessionId = request.nextUrl.searchParams.get('sessionId') || 'global';
   const sessionClients = getSessionClients(sessionId);
 
+  let keepAliveInterval: NodeJS.Timeout;
+
   const stream = new ReadableStream({
     start(controller) {
       sessionClients.add(controller);
       console.log(`Client connected to session [${sessionId}]. Total clients: ${sessionClients.size}`);
 
-      // When the connection closes, remove the client from the set.
+      // Send a keep-alive message every 10 seconds
+      keepAliveInterval = setInterval(() => {
+        controller.enqueue(new TextEncoder().encode(': keep-alive\n\n'));
+      }, 10000);
+
+      // When the connection closes, remove the client and clear the interval.
       request.signal.addEventListener('abort', () => {
+        clearInterval(keepAliveInterval);
         sessionClients.delete(controller);
         console.log(`Client disconnected from session [${sessionId}]. Total clients: ${sessionClients.size}`);
       });
     },
     cancel() {
-      // This is handled by the abort event listener.
+      clearInterval(keepAliveInterval);
     },
   });
 

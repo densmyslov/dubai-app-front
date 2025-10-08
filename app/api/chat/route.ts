@@ -244,15 +244,27 @@ function broadcast(message: any) {
 (global as any).broadcastMessage = broadcast;
 
 export async function GET(_request: NextRequest) {
+  let keepAliveInterval: NodeJS.Timeout;
+
   const stream = new ReadableStream({
     start(controller) {
       clients.add(controller);
       console.log('Client connected. Total clients:', clients.size);
+
+      // Send a keep-alive message every 10 seconds
+      keepAliveInterval = setInterval(() => {
+        controller.enqueue(new TextEncoder().encode(': keep-alive\n\n'));
+      }, 10000);
+
+      _request.signal.addEventListener('abort', () => {
+        clearInterval(keepAliveInterval);
+        clients.delete(controller);
+        console.log(`Client disconnected. Total clients: ${clients.size}`);
+      });
     },
     cancel(_reason) {
-      // 'this' is not available in arrow functions, so we need to find the controller to remove it.
-      // This simple implementation can't do that without iterating, so we'll rely on the controller being closed.
-      // For a robust solution, you'd map controllers to an ID.
+      clearInterval(keepAliveInterval);
+      // The abort listener will handle client removal.
       console.log('Client disconnected check. Total clients:', clients.size);
     },
   });
