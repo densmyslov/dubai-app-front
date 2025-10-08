@@ -75,26 +75,45 @@ export async function POST(request: NextRequest) {
       headers['x-api-key'] = apiKey;
     }
 
+    const resolvedModel = (() => {
+      const candidate = typeof body.model === 'string' ? body.model.trim() : '';
+      if (candidate) return candidate;
+
+      const envModel = typeof process.env.CLAUDE_MODEL === 'string'
+        ? process.env.CLAUDE_MODEL.trim()
+        : '';
+      return envModel || undefined;
+    })();
+
+    const resolvedMaxTokens = typeof body.max_tokens === 'number' && Number.isFinite(body.max_tokens)
+      ? body.max_tokens
+      : 4096;
+
     // upstream fetch with timeout
     const ac = new AbortController();
     const fetchTimeout = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
 
     let upstream: Response;
     try {
+      const payload: Record<string, unknown> = {
+        message: messageText,
+        conversation_history: conversationHistory,
+        stream: body.stream !== false, // default true
+        max_tokens: resolvedMaxTokens,
+        metadata: {
+          query_id: queryId,
+          user_id: userId,
+        },
+      };
+
+      if (resolvedModel) {
+        payload.model = resolvedModel;
+      }
+
       upstream = await fetch(lambdaUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          message: messageText,
-          conversation_history: conversationHistory,
-          stream: body.stream !== false, // default true
-          model: body.model || process.env.CLAUDE_MODEL || null,
-          max_tokens: body.max_tokens || 4096,
-          metadata: {
-            query_id: queryId,
-            user_id: userId,
-          },
-        }),
+        body: JSON.stringify(payload),
         signal: ac.signal,
       });
     } catch (err: any) {
