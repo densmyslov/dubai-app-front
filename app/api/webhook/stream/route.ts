@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 export const runtime = 'edge';
 
 // This is a simplified in-memory store. In a real-world serverless environment,
-// you would use a distributed pub/sub system like Cloudflare Pub/Sub, KV, or a third-party service.
+// you would use a distributed pub/sub system.
 const clients = new Map<string, Set<ReadableStreamDefaultController>>();
 
 function getSessionClients(sessionId: string): Set<ReadableStreamDefaultController> {
@@ -22,7 +22,7 @@ function broadcast(sessionId: string, message: any) {
     try {
       controller.enqueue(new TextEncoder().encode(formattedMessage));
     } catch (e) {
-      console.error('Failed to send to a client, removing.', e);
+      console.error('Failed to send to a client, removing from session.', e);
       sessionClients.delete(controller);
     }
   });
@@ -39,12 +39,15 @@ export async function GET(request: NextRequest) {
     start(controller) {
       sessionClients.add(controller);
       console.log(`Client connected to session [${sessionId}]. Total clients: ${sessionClients.size}`);
+
+      // When the connection closes, remove the client from the set.
+      request.signal.addEventListener('abort', () => {
+        sessionClients.delete(controller);
+        console.log(`Client disconnected from session [${sessionId}]. Total clients: ${sessionClients.size}`);
+      });
     },
     cancel() {
-      // This stream is now closed, but we need to find which controller to remove.
-      // A robust solution would map controllers to a unique ID on connect.
-      // For this simple case, we rely on the error handling in broadcast to clean up.
-      console.log(`A client from session [${sessionId}] disconnected.`);
+      // This is handled by the abort event listener.
     },
   });
 
@@ -56,9 +59,6 @@ export async function GET(request: NextRequest) {
     },
   });
 }
-        try { controller.close(); } catch {}
-      };
-      request.signal.addEventListener('abort', abort);
     },
   });
 
