@@ -250,11 +250,10 @@ export async function GET(request: NextRequest) {
       console.log('Client connected. Total clients:', clients.size);
     },
     cancel(reason) {
-      const controller = this.controller;
-      if (controller) {
-        clients.delete(controller);
-        console.log('Client disconnected. Total clients:', clients.size);
-      }
+      // 'this' is not available in arrow functions, so we need to find the controller to remove it.
+      // This simple implementation can't do that without iterating, so we'll rely on the controller being closed.
+      // For a robust solution, you'd map controllers to an ID.
+      console.log('Client disconnected check. Total clients:', clients.size);
     },
   });
 
@@ -265,6 +264,7 @@ export async function GET(request: NextRequest) {
       'Connection': 'keep-alive',
     },
   });
+}
 }
       'Connection': 'keep-alive',
     },

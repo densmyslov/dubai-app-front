@@ -76,22 +76,19 @@ export default function ChatWindow() {
     es.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        // If your SSE sends {type:'webhook_message', text:'...'}, adapt here.
-        // For a generic message, push as assistant text:
-        const maybeText =
-          typeof payload === 'string'
-            ? payload
-            : payload?.text ?? payload?.message ?? JSON.stringify(payload);
+        // Extract text from the webhook payload.
+        const messageText = payload?.text ?? payload?.message ?? JSON.stringify(payload);
 
+        // Add the message with the 'assistant' role to match Claude's responses.
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: String(maybeText) },
+          { role: 'assistant', content: `Webhook: ${messageText}` },
         ]);
       } catch {
-        // fallback: raw
+        // Fallback for non-JSON data
         setMessages((prev) => [
           ...prev,
-          { role: 'assistant', content: event.data },
+          { role: 'assistant', content: `Webhook: ${event.data}` },
         ]);
       }
     };
@@ -202,46 +199,16 @@ export default function ChatWindow() {
             }
 
             if (parsed.type === 'chunk' && parsed.text) {
-              // Stream character by character for typing effect
-              const text: string = parsed.text;
-              for (let i = 0; i < text.length; i++) {
-                if (signal.aborted) {
-                  reader.cancel();
-                  return;
-                }
-                assistantMessage += text[i];
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    role: 'assistant',
-                    content: assistantMessage,
-                  };
-                  return updated;
-                });
-
-                // small delay
-                await new Promise<void>((resolve, reject) => {
-                  if (signal.aborted) {
-                    reject(new DOMException('Aborted', 'AbortError'));
-                    return;
-                  }
-                  const timeout = setTimeout(() => {
-                    if (signal.aborted) {
-                      reject(new DOMException('Aborted', 'AbortError'));
-                    } else {
-                      resolve();
-                    }
-                  }, 20);
-                  signal.addEventListener(
-                    'abort',
-                    () => {
-                      clearTimeout(timeout);
-                      reject(new DOMException('Aborted', 'AbortError'));
-                    },
-                    { once: true }
-                  );
-                });
-              }
+              // Append chunk to the assistant message
+              assistantMessage += parsed.text;
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: 'assistant',
+                  content: assistantMessage,
+                };
+                return updated;
+              });
             } else if (parsed.type === 'done') {
               console.log('Conversation complete. Final metadata:', parsed.metadata);
             } else if (parsed.type === 'error') {
@@ -392,6 +359,36 @@ export default function ChatWindow() {
             placeholder="Type a message..."
             disabled={isLoading}
             rows={1}
+            className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 dark:disabled:bg-slate-800 resize-none overflow-y-auto"
+            style={{ maxHeight: '120px' }}
+          />
+          <button
+            type={isLoading ? 'button' : 'submit'}
+            onClick={isLoading ? handleStop : undefined}
+            disabled={!isLoading && !input.trim()}
+            className="bg-blue-600 text-white rounded-full px-4 py-2 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+            title={isLoading ? 'Stop generating' : 'Send message'}
+          >
+            {isLoading ? (
+              // spinner
+              <svg className="animate-spin h-5 w-5 cursor-pointer" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              // send icon
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
             className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 dark:disabled:bg-slate-800 resize-none overflow-y-auto"
             style={{ maxHeight: '120px' }}
           />

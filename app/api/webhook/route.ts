@@ -5,9 +5,9 @@ export async function POST(request: NextRequest) {
     const body: any = await request.json();
     console.log('Webhook received:', body);
 
-    // Broadcast the message to connected clients
-    if ((global as any).broadcastMessage) {
-      (global as any).broadcastMessage({
+    // Broadcast the message to clients connected to the 'global' session.
+    if ((global as any).broadcastWebhookMessage) {
+      (global as any).broadcastWebhookMessage('global', {
         id: new Date().toISOString(),
         text: body.message || 'No message content',
       });
