@@ -8,28 +8,64 @@ type Msg = { role: "user" | "assistant"; content: string };
 export default function ChatWindow() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const sourceRef = useRef<EventSource | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attemptRef = useRef(0);
 
   useEffect(() => {
-    const es = new EventSource("/api/webhook/stream?sessionId=global");
+    let isMounted = true;
 
-    es.onmessage = (e) => {
-      const data = JSON.parse(e.data); // { id, text, ... } from your DO
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.text ?? JSON.stringify(data) },
-      ]);
+    const scheduleReconnect = () => {
+      if (!isMounted) return;
+      const attempt = attemptRef.current + 1;
+      attemptRef.current = attempt;
+      const delay = Math.min(1500 * attempt, 15000); // linear backoff up to 15s
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = setTimeout(() => {
+        retryTimeoutRef.current = null;
+        connect();
+      }, delay);
     };
 
-    es.onerror = () => {
-      es.close();
-      // simple retry strategy
-      setTimeout(() => {
-        // reload to recreate EventSource; swap for smarter backoff if you want
-        location.reload();
-      }, 1500);
+    const connect = () => {
+      if (!isMounted) return;
+      const es = new EventSource("/api/webhook/stream?sessionId=global");
+      sourceRef.current = es;
+
+      es.onopen = () => {
+        attemptRef.current = 0;
+      };
+
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data); // { id, text, ... } from your DO
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: data.text ?? JSON.stringify(data) },
+          ]);
+        } catch (error) {
+          console.error("Failed to parse SSE message", error);
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        sourceRef.current = null;
+        scheduleReconnect();
+      };
     };
 
-    return () => es.close();
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+      sourceRef.current?.close();
+      sourceRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
