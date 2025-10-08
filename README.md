@@ -25,7 +25,7 @@ npm run dev
 
 #### Option A — Git-connected build (recommended)
 1. Create a new Pages project → **Connect to Git** (this repo).
-2. Build command: `npm run build:cf`
+2. Build command: `npm run build:cf` (produces `.open-next/` automatically)
 3. Build output directory: `.open-next`
 4. Node version: 18 or 20.
 5. Add required env vars (e.g. `WEBHOOK_SECRET`, `LAMBDA_FUNCTION_URL`, `CLAUDE_MODEL`, `NEXT_PUBLIC_API_BASE`).
