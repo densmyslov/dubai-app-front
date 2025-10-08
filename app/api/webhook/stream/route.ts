@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 
 // The Cloudflare runtime provides the KV binding on process.env in Pages Functions.
 const getKV = () => {
+  // @ts-expect-error - WEBHOOK_KV is injected by the Cloudflare runtime and is not visible to TypeScript during the build process.
   return process.env.WEBHOOK_KV as KVNamespace | undefined;
 };
 
