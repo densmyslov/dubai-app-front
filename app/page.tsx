@@ -2,6 +2,7 @@ import React from 'react';
 import KPICard from './components/KPICard';
 import ChartCard from './components/ChartCard';
 import { API_BASE } from './lib/config';
+import ChatWindow from './components/ChatWindow';
 
 export const runtime = 'edge';
 
@@ -47,6 +48,7 @@ export default async function Page() {
 
   return (
     <main className="space-y-6">
+      <ChatWindow />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard label="Top Net Yield (sample)" value={kpiNetYield} suffix="%" />
         <KPICard label="Top Price-to-Rent (years)" value={kpiPtr} />

@@ -14,10 +14,6 @@ async function getApiAuthToken(): Promise<string | null> {
   return process.env.KEY || null;
 }
 
-export async function GET() {
-  return new Response('chat api ok', { status: 200 });
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
@@ -226,4 +222,51 @@ export async function POST(request: NextRequest) {
     console.error('Chat API error:', error);
     return new Response(`Internal server error: ${String(error)}`, { status: 500 });
   }
+}
+
+// This is a simplified in-memory store for demonstration.
+// In a real-world serverless environment, you'd use a distributed pub/sub system.
+const clients = new Set<ReadableStreamDefaultController>();
+
+function broadcast(message: any) {
+  const formattedMessage = `data: ${JSON.stringify(message)}\n\n`;
+  clients.forEach(controller => {
+    try {
+      controller.enqueue(new TextEncoder().encode(formattedMessage));
+    } catch (e) {
+      console.error('Failed to send to a client, removing.', e);
+      clients.delete(controller);
+    }
+  });
+}
+
+// This is a global function that the webhook can call.
+(global as any).broadcastMessage = broadcast;
+
+export async function GET(request: NextRequest) {
+  const stream = new ReadableStream({
+    start(controller) {
+      clients.add(controller);
+      console.log('Client connected. Total clients:', clients.size);
+    },
+    cancel(reason) {
+      const controller = this.controller;
+      if (controller) {
+        clients.delete(controller);
+        console.log('Client disconnected. Total clients:', clients.size);
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+      'Connection': 'keep-alive',
+    },
+  });
 }
