@@ -67,8 +67,8 @@ export default function ChatWindow() {
 
     setConnectionStatus('connecting');
 
-    // Adjust this endpoint to your actual SSE URL (e.g. /api/webhook/stream?sessionId=global)
-    const es = new EventSource('/api/webhook/stream?sessionId=global');
+    // Point to the consolidated webhook endpoint
+    const es = new EventSource('/api/webhook');
     esRef.current = es;
 
     es.onopen = () => setConnectionStatus('connected');

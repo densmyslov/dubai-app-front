@@ -1,75 +1,75 @@
-// app/api/webhook/stream/route.ts
-import { NextRequest } from 'next/server';
+// app/api/webhook/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'edge';
 
-type Listener = (payload: unknown) => void;
+// In-memory store for SSE clients.
+const clients = new Set<ReadableStreamDefaultController>();
+let keepAliveInterval: NodeJS.Timeout;
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __webhookListeners: Map<string, Set<Listener>> | undefined;
-  // eslint-disable-next-line no-var
-  var addWebhookListener: ((sessionId: string, fn: Listener) => void) | undefined;
-  // eslint-disable-next-line no-var
-  var removeWebhookListener: ((sessionId: string, fn: Listener) => void) | undefined;
-  // eslint-disable-next-line no-var
-  var broadcastWebhookMessage: ((sessionId: string, payload: unknown) => void) | undefined;
+function broadcast(message: any) {
+  const formattedMessage = `data: ${JSON.stringify(message)}\n\n`;
+  clients.forEach(controller => {
+    try {
+      controller.enqueue(new TextEncoder().encode(formattedMessage));
+    } catch (e) {
+      console.error('Failed to send to a client, removing.', e);
+      clients.delete(controller);
+    }
+  });
 }
 
-// Minimal global bus (idempotent)
-if (!(global as any).__webhookListeners) {
-  (global as any).__webhookListeners = new Map<string, Set<Listener>>();
-  (global as any).addWebhookListener = (sid: string, fn: Listener) => {
-    const m = (global as any).__webhookListeners as Map<string, Set<Listener>>;
-    if (!m.has(sid)) m.set(sid, new Set());
-    m.get(sid)!.add(fn);
-  };
-  (global as any).removeWebhookListener = (sid: string, fn: Listener) => {
-    const m = (global as any).__webhookListeners as Map<string, Set<Listener>>;
-    m.get(sid)?.delete(fn);
-  };
-  (global as any).broadcastWebhookMessage = (sid: string, payload: unknown) => {
-    const m = (global as any).__webhookListeners as Map<string, Set<Listener>>;
-    m.get(sid)?.forEach((fn) => { try { fn(payload); } catch {} });
-  };
-}
-
+// SSE connection handler
 export async function GET(request: NextRequest) {
-  const encoder = new TextEncoder();
-
   const stream = new ReadableStream({
     start(controller) {
-      const send = (payload: unknown) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
-      };
+      clients.add(controller);
+      console.log(`Client connected. Total clients: ${clients.size}`);
 
-      // subscribe this client
-      (global as any).addWebhookListener?.('global', send);
+      // Start keep-alive if this is the first client
+      if (clients.size === 1) {
+        keepAliveInterval = setInterval(() => {
+          broadcast({ type: 'heartbeat' });
+        }, 10000);
+      }
 
-      const abort = () => {
-        try { controller.close(); } catch {}
-        (global as any).removeWebhookListener?.('global', send);
-        request.signal.removeEventListener('abort', abort);
-      };
-
-      // clean up on disconnect
-      request.signal.addEventListener('abort', abort);
-
-      // optional initial ping
-      send({ ok: true, connected: true, ts: new Date().toISOString() });
-    },
-    cancel() {
-      // extra safety: if cancel is called by the runtime
-      // the abort handler above will already handle close & unsubscribe
+      request.signal.addEventListener('abort', () => {
+        clients.delete(controller);
+        console.log(`Client disconnected. Total clients: ${clients.size}`);
+        // Stop keep-alive if no clients are left
+        if (clients.size === 0) {
+          clearInterval(keepAliveInterval);
+        }
+      });
     },
   });
 
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
     },
+  });
+}
+
+// Webhook POST handler
+export async function POST(request: NextRequest) {
+  try {
+    const body: any = await request.json();
+    console.log('Webhook received:', body);
+
+    broadcast({
+      id: new Date().toISOString(),
+      text: body.message || 'No message content',
+    });
+
+    return NextResponse.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+}
   });
 }
 
