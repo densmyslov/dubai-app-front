@@ -15,12 +15,13 @@ async function fetchJSON(path: string) {
 }
 
 export default async function Page() {
-  const league = await fetchJSON('/api/league'); // [{area, property_sub_type, net_yield, price_to_rent, ...}]
-  const rentPpm2 = await fetchJSON('/api/rent_ppm2'); // [{period, area, property_sub_type, median_rent_ppm2}]
-  const ptr = await fetchJSON('/api/ptr'); // [{period, area, property_sub_type, price_to_rent}]
+  const league = await fetchJSON('/api/league') as any[] | null; // [{area, property_sub_type, net_yield, price_to_rent, ...}]
+  const rentPpm2 = await fetchJSON('/api/rent_ppm2') as any[] | null; // [{period, area, property_sub_type, median_rent_ppm2}]
+  const ptr = await fetchJSON('/api/ptr') as any[] | null; // [{period, area, property_sub_type, price_to_rent}]
 
-  const kpiNetYield = league?.[0]?.net_yield ? (league[0].net_yield*100).toFixed(2) : '—';
-  const kpiPtr = league?.[0]?.price_to_rent ? league[0].price_to_rent.toFixed(1) : '—';
+  const firstLeague = league?.[0];
+  const kpiNetYield = firstLeague?.net_yield ? (firstLeague.net_yield * 100).toFixed(2) : '—';
+  const kpiPtr = firstLeague?.price_to_rent ? firstLeague.price_to_rent.toFixed(1) : '—';
 
   // Build simple timeseries for the first area/subtype
   const firstKey = rentPpm2?.[0]?.area && rentPpm2?.[0]?.property_sub_type
@@ -29,7 +30,7 @@ export default async function Page() {
   const rentCat: string[] = [];
   const rentData: number[] = [];
   if (firstKey) {
-    rentPpm2
+    (rentPpm2 as any[])
       .filter((r: any) => r.area === firstKey.area && r.property_sub_type === firstKey.sub)
       .slice(0, 24)
       .forEach((r: any) => { rentCat.push(r.period.slice(0,7)); rentData.push(r.median_rent_ppm2); });
@@ -38,7 +39,7 @@ export default async function Page() {
   const ptrCat: string[] = [];
   const ptrData: number[] = [];
   if (firstKey) {
-    ptr
+    (ptr as any[])
       .filter((p: any) => p.area === firstKey.area && p.property_sub_type === firstKey.sub)
       .slice(0, 24)
       .forEach((p: any) => { ptrCat.push(p.period.slice(0,7)); ptrData.push(p.price_to_rent); });

@@ -200,10 +200,10 @@ export async function POST(request: NextRequest) {
                   user_id: userId,
                   type: parsed.type,
                 });
-              } catch (_e) {
-                // Not valid JSON -> pass through original event
-                controller.enqueue(encoder.encode('data: ' + dataPayload + '\n\n'));
-              }
+              } catch {
+                        controller.enqueue(encoder.encode('data: ' + dataPayload + '\n\n'));
+                      }
+
             }
           }
         } catch (error) {
