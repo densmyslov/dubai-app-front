@@ -1,54 +1,36 @@
+// app/api/webhook/stream/route.ts
 import { NextRequest } from 'next/server';
 
-export const runtime = 'nodejs'; // or 'edge' if you intend to run at the edge
+export const runtime = 'nodejs'; // or 'edge'
 
 type Listener = (payload: unknown) => void;
 
 declare global {
-  // Optional global registry; if you already define these elsewhere, keep those.
   // eslint-disable-next-line no-var
   var __webhookListeners: Map<string, Set<Listener>> | undefined;
   // eslint-disable-next-line no-var
-  var addWebhookListener:
-    | ((sessionId: string, fn: Listener) => void)
-    | undefined;
+  var addWebhookListener: ((sessionId: string, fn: Listener) => void) | undefined;
   // eslint-disable-next-line no-var
-  var removeWebhookListener:
-    | ((sessionId: string, fn: Listener) => void)
-    | undefined;
+  var removeWebhookListener: ((sessionId: string, fn: Listener) => void) | undefined;
   // eslint-disable-next-line no-var
-  var broadcastWebhookMessage:
-    | ((sessionId: string, payload: unknown) => void)
-    | undefined;
+  var broadcastWebhookMessage: ((sessionId: string, payload: unknown) => void) | undefined;
 }
 
-// Minimal global registry (safe if already defined)
+// Minimal global bus (idempotent)
 if (!(global as any).__webhookListeners) {
   (global as any).__webhookListeners = new Map<string, Set<Listener>>();
-
-  (global as any).addWebhookListener = (sessionId: string, fn: Listener) => {
+  (global as any).addWebhookListener = (sid: string, fn: Listener) => {
     const m = (global as any).__webhookListeners as Map<string, Set<Listener>>;
-    if (!m.has(sessionId)) m.set(sessionId, new Set());
-    m.get(sessionId)!.add(fn);
+    if (!m.has(sid)) m.set(sid, new Set());
+    m.get(sid)!.add(fn);
   };
-
-  (global as any).removeWebhookListener = (sessionId: string, fn: Listener) => {
+  (global as any).removeWebhookListener = (sid: string, fn: Listener) => {
     const m = (global as any).__webhookListeners as Map<string, Set<Listener>>;
-    m.get(sessionId)?.delete(fn);
+    m.get(sid)?.delete(fn);
   };
-
-  (global as any).broadcastWebhookMessage = (
-    sessionId: string,
-    payload: unknown
-  ) => {
+  (global as any).broadcastWebhookMessage = (sid: string, payload: unknown) => {
     const m = (global as any).__webhookListeners as Map<string, Set<Listener>>;
-    m.get(sessionId)?.forEach((fn) => {
-      try {
-        fn(payload);
-      } catch {
-        // no-op
-      }
-    });
+    m.get(sid)?.forEach((fn) => { try { fn(payload); } catch {} });
   };
 }
 
@@ -58,26 +40,27 @@ export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       const send = (payload: unknown) => {
-        const chunk = `data: ${JSON.stringify(payload)}\n\n`;
-        controller.enqueue(encoder.encode(chunk));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       };
 
-      // Subscribe this client to the "global" session.
+      // subscribe this client
       (global as any).addWebhookListener?.('global', send);
 
       const abort = () => {
-        try {
-          controller.close();
-        } catch {}
+        try { controller.close(); } catch {}
         (global as any).removeWebhookListener?.('global', send);
         request.signal.removeEventListener('abort', abort);
       };
 
-      // Clean up if the client disconnects
+      // clean up on disconnect
       request.signal.addEventListener('abort', abort);
 
-      // Optional: send an initial ping so client knows it’s connected
+      // optional initial ping
       send({ ok: true, connected: true, ts: new Date().toISOString() });
+    },
+    cancel() {
+      // extra safety: if cancel is called by the runtime
+      // the abort handler above will already handle close & unsubscribe
     },
   });
 
