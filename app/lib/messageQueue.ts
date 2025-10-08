@@ -64,4 +64,13 @@ class MessageQueue {
   }
 }
 
-export const messageQueue = new MessageQueue();
+const globalForMessageQueue = globalThis as typeof globalThis & {
+  __WEBHOOK_MESSAGE_QUEUE__?: MessageQueue;
+};
+
+export const messageQueue =
+  globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__ ?? new MessageQueue();
+
+if (!globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__) {
+  globalForMessageQueue.__WEBHOOK_MESSAGE_QUEUE__ = messageQueue;
+}
