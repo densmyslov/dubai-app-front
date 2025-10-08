@@ -1,0 +1,13 @@
+name = "session-hub"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# Define/own the Durable Object class here (Workers config allows migrations)
+[[durable_objects.bindings]]
+name = "SESSIONS"
+class_name = "SessionHub"
+
+# First migration to create the DO class
+[[migrations]]
+tag = "v1"
+new_classes = ["SessionHub"]
