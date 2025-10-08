@@ -3,26 +3,18 @@ compatibility_date = "2024-11-01"
 pages_build_output_dir = ".open-next"
 compatibility_flags = ["nodejs_compat"]
 
-# Bind the KV namespace for message storage
+# KV namespace for message storage
 [[kv_namespaces]]
 binding = "WEBHOOK_KV"
 id = "2d0ed139149e47e0a6fce80719d2d44f"
 
-# Bind the Queue for message ingestion
+# Queue producer (for message ingestion)
 [[queues.producers]]
 binding = "MESSAGE_QUEUE"
-queue = "dubai-app-queue" # the name of the queue
+queue = "dubai-app-queue"
 
-# Bind the Durable Object class
+# Durable Object binding (Pages must reference a Worker via script_name)
 [[durable_objects.bindings]]
-name = "SESSIONS"                   # <-- this must match your Pages Functions env type
-class_name = "SessionHub"           # <-- exported class in functions/SessionHub.ts
-
-# First migration to create the class
-[[migrations]]
-tag = "v1"                          # bump to v2, v3... when you change DO classes
-new_classes = ["SessionHub"]
-
-# (Optional) Vars, KV, R2, etc. can go here too
-# [vars]
-# MY_FLAG = "1"
+name = "SESSIONS"            # used in Pages Functions as env.SESSIONS
+class_name = "SessionHub"    # DO class name defined in the Worker
+script_name = "session-hub"  # EXACT Worker name that owns the DO
