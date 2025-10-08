@@ -33,6 +33,26 @@ export interface MessageResponse {
   usage: UsageStats;
 }
 
+/** Expected non-stream JSON shape from your API */
+type ClaudeJSON = {
+  response: string;
+  model: string;
+  usage: UsageStats;
+};
+
+/** Type guard to validate unknown JSON from response.json() */
+function isClaudeJSON(x: unknown): x is ClaudeJSON {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.response === "string" &&
+    typeof o.model === "string" &&
+    !!o.usage &&
+    typeof (o.usage as any).input_tokens === "number" &&
+    typeof (o.usage as any).output_tokens === "number"
+  );
+}
+
 export class ClaudeLLMClient {
   private apiUrl: string;
   private apiKey: string | null;
@@ -40,7 +60,7 @@ export class ClaudeLLMClient {
   private defaultMaxTokens: number;
 
   /**
-   * Initialize the client
+   * Initialise the client
    * @param apiUrl - Lambda Function URL or Next.js API route
    * @param options - Optional configuration
    * @param options.apiKey - API key for authentication (passed as x-api-key header)
@@ -51,7 +71,7 @@ export class ClaudeLLMClient {
     this.apiUrl = apiUrl;
     this.apiKey = options.apiKey || null;
     this.defaultModel = options.model || null; // Will use server default from parameters.json
-    this.defaultMaxTokens = options.maxTokens || 4096;
+    this.defaultMaxTokens = options.maxTokens ?? 4096;
   }
 
   /**
@@ -69,21 +89,18 @@ export class ClaudeLLMClient {
 
     try {
       const headers: HeadersInit = {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       };
-
-      if (this.apiKey) {
-        headers['x-api-key'] = this.apiKey;
-      }
+      if (this.apiKey) headers["x-api-key"] = this.apiKey;
 
       const response = await fetch(this.apiUrl, {
-        method: 'POST',
+        method: "POST",
         headers,
         body: JSON.stringify({
-          message: message,
+          message,
           stream: true,
-          model: options.model || this.defaultModel,
-          max_tokens: options.maxTokens || this.defaultMaxTokens,
+          model: options.model ?? this.defaultModel,
+          max_tokens: options.maxTokens ?? this.defaultMaxTokens,
         }),
       });
 
@@ -91,55 +108,57 @@ export class ClaudeLLMClient {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Read streaming response
       const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body');
-      }
+      if (!reader) throw new Error("No response body");
 
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Decode chunk and add to buffer
         buffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE events (separated by \n\n)
-        const events = buffer.split('\n\n');
+        // Split by SSE event boundary
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || ""; // keep incomplete fragment
 
-        // Keep incomplete event in buffer
-        buffer = events.pop() || '';
+        for (const ev of events) {
+          const line = ev.trim();
+          if (!line) continue;
 
-        for (const event of events) {
-          if (!event.trim()) continue;
+          // Handle multiple "data:" lines if any; join payload lines
+          const dataLines = line
+            .split("\n")
+            .filter((l) => l.startsWith("data: "))
+            .map((l) => l.slice(6));
+          if (dataLines.length === 0) continue;
 
-          // Parse SSE format: "data: {...}"
-          if (event.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(event.substring(6));
+          const joined = dataLines.join("");
+          try {
+            const data = JSON.parse(joined) as
+              | { type: "chunk"; text: string }
+              | { type: "done"; usage: UsageStats }
+              | { type: "error"; error: string };
 
-              if (data.type === 'chunk' && onChunk) {
-                onChunk(data.text);
-              } else if (data.type === 'done' && onComplete) {
-                onComplete(data.usage);
-              } else if (data.type === 'error' && onError) {
-                onError(new Error(data.error));
-              }
-            } catch (e) {
-              console.error('Failed to parse SSE data:', e);
+            if (data.type === "chunk") {
+              onChunk?.(data.text);
+            } else if (data.type === "done") {
+              onComplete?.(data.usage);
+            } else if (data.type === "error") {
+              const err = new Error(data.error);
+              if (onError) onError(err);
+              else throw err;
             }
+          } catch (e) {
+            console.error("Failed to parse SSE data:", e);
           }
         }
       }
     } catch (error) {
-      if (onError) {
-        onError(error as Error);
-      } else {
-        throw error;
-      }
+      if (onError) onError(error as Error);
+      else throw error;
     }
   }
 
@@ -153,38 +172,37 @@ export class ClaudeLLMClient {
     message: string,
     options: MessageOptions = {}
   ): Promise<MessageResponse> {
-    try {
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-      };
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey) headers["x-api-key"] = this.apiKey;
 
-      if (this.apiKey) {
-        headers['x-api-key'] = this.apiKey;
-      }
+    const response = await fetch(this.apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message,
+        stream: false,
+        model: options.model ?? this.defaultModel,
+        max_tokens: options.maxTokens ?? this.defaultMaxTokens,
+      }),
+    });
 
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          message: message,
-          stream: false,
-          model: options.model || this.defaultModel,
-          max_tokens: options.maxTokens || this.defaultMaxTokens,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return {
-        text: data.response,
-        model: data.model,
-        usage: data.usage,
-      };
-    } catch (error) {
-      throw error;
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    // TS 5.6+: json() is unknown — validate with a type guard
+    const raw: unknown = await response.json();
+    if (!isClaudeJSON(raw)) {
+      console.error("Unexpected API payload:", raw);
+      throw new Error("Invalid response format from Claude API");
+    }
+
+    return {
+      text: raw.response,
+      model: raw.model,
+      usage: raw.usage,
+    };
   }
 }

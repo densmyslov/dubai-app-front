@@ -38,19 +38,15 @@ export async function POST(request: NextRequest) {
     let conversationHistory: Message[] = [];
 
     if (Array.isArray(body.messages) && body.messages.length > 0) {
-      // Messages array provided - extract history and current message
       const lastMessage = body.messages[body.messages.length - 1];
       if (!lastMessage || lastMessage.role !== 'user') {
         return new Response('Last message must be from user', { status: 400 });
       }
       messageText = lastMessage.content;
-
-      // All messages except the last one become conversation history
       if (body.messages.length > 1) {
         conversationHistory = body.messages.slice(0, -1);
       }
     } else if (typeof body.message === 'string' && body.message.length > 0) {
-      // Single message provided - no history
       messageText = body.message;
       conversationHistory = [];
     } else {
@@ -68,7 +64,7 @@ export async function POST(request: NextRequest) {
     // headers + auth
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
     const clientApiKey = request.headers.get('x-api-key');
-    const clientAuth   = request.headers.get('authorization');
+    const clientAuth = request.headers.get('authorization');
     const serverApiKey = await getApiAuthToken();
     const apiKey = clientApiKey || clientAuth || serverApiKey;
     if (apiKey) {
@@ -78,16 +74,16 @@ export async function POST(request: NextRequest) {
     const resolvedModel = (() => {
       const candidate = typeof body.model === 'string' ? body.model.trim() : '';
       if (candidate) return candidate;
-
       const envModel = typeof process.env.CLAUDE_MODEL === 'string'
         ? process.env.CLAUDE_MODEL.trim()
         : '';
       return envModel || undefined;
     })();
 
-    const resolvedMaxTokens = typeof body.max_tokens === 'number' && Number.isFinite(body.max_tokens)
-      ? body.max_tokens
-      : 4096;
+    const resolvedMaxTokens =
+      typeof body.max_tokens === 'number' && Number.isFinite(body.max_tokens)
+        ? body.max_tokens
+        : 4096;
 
     // upstream fetch with timeout
     const ac = new AbortController();
@@ -105,10 +101,7 @@ export async function POST(request: NextRequest) {
           user_id: userId,
         },
       };
-
-      if (resolvedModel) {
-        payload.model = resolvedModel;
-      }
+      if (resolvedModel) payload.model = resolvedModel;
 
       upstream = await fetch(lambdaUrl, {
         method: 'POST',
@@ -147,45 +140,69 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        let buffer = '';
+
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += decoder.decode(value, { stream: true });
 
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6).trim();
-                if (data === '[DONE]') {
-                  controller.enqueue(encoder.encode(line + '\n'));
-                  continue;
-                }
+            // Process complete SSE events delimited by blank line
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || ''; // keep incomplete tail
 
-                try {
-                  const parsed = JSON.parse(data);
+            for (const event of events) {
+              if (!event.trim()) {
+                controller.enqueue(encoder.encode('\n\n'));
+                continue;
+              }
 
-                  // Inject metadata into every event
-                  if (!parsed.metadata) {
-                    parsed.metadata = {};
-                  }
-                  parsed.metadata.query_id = queryId;
-                  parsed.metadata.user_id = userId;
+              // Collect all data lines (support multi-line data payloads)
+              const dataLines = event
+                .split('\n')
+                .filter((l) => l.startsWith('data: '))
+                .map((l) => l.slice(6));
 
-                  const modifiedLine = 'data: ' + JSON.stringify(parsed) + '\n';
-                  controller.enqueue(encoder.encode(modifiedLine));
+              if (dataLines.length === 0) {
+                // passthrough non-data lines (event:, id:, retry:, comments, etc.)
+                controller.enqueue(encoder.encode(event + '\n\n'));
+                continue;
+              }
 
-                  // Log for debugging
-                  console.log('Injected metadata:', { query_id: queryId, user_id: userId, type: parsed.type });
-                } catch (parseError) {
-                  // If not valid JSON, pass through as-is
-                  console.log('Failed to parse SSE data, passing through:', data.substring(0, 50));
-                  controller.enqueue(encoder.encode(line + '\n'));
-                }
-              } else if (line) {
-                // Pass through other lines (like empty lines)
-                controller.enqueue(encoder.encode(line + '\n'));
+              const dataPayload = dataLines.join('');
+              if (dataPayload === '[DONE]') {
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                continue;
+              }
+
+              try {
+                const parsed = JSON.parse(dataPayload) as {
+                  type?: string;
+                  metadata?: Record<string, unknown>;
+                  [k: string]: unknown;
+                };
+
+                // Inject metadata
+                parsed.metadata = {
+                  ...(parsed.metadata ?? {}),
+                  query_id: queryId,
+                  user_id: userId,
+                };
+
+                const modified = 'data: ' + JSON.stringify(parsed) + '\n\n';
+                controller.enqueue(encoder.encode(modified));
+
+                // Debug log
+                console.log('Injected metadata:', {
+                  query_id: queryId,
+                  user_id: userId,
+                  type: parsed.type,
+                });
+              } catch (_e) {
+                // Not valid JSON -> pass through original event
+                controller.enqueue(encoder.encode('data: ' + dataPayload + '\n\n'));
               }
             }
           }
@@ -199,13 +216,14 @@ export async function POST(request: NextRequest) {
 
     return new Response(transformedStream, {
       headers: {
-        'Content-Type': 'text/event-stream',
+        'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
   } catch (error) {
     console.error('Chat API error:', error);
-    return new Response(`Internal server error: ${error}`, { status: 500 });
+    return new Response(`Internal server error: ${String(error)}`, { status: 500 });
   }
 }
