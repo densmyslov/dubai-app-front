@@ -1,98 +1,90 @@
-// app/components/ChartCard.tsx
+// app/components/ChatWindow.tsx
 "use client";
-import React, { useEffect, useRef, useState } from "react";
-import * as echarts from "echarts";
 
-type Series = { name: string; data: number[] };
+import { useEffect, useRef, useState } from "react";
 
-export default function ChartCard({
-  title,
-  categories,
-  series,
-  streamSessionId, // <- optional: if provided, listen to SSE and append
-}: {
-  title: string;
-  categories: string[];
-  series: Series[];
-  streamSessionId?: string;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.EChartsType | null>(null);
-  const [isDark, setIsDark] = useState(false);
+type Msg = { role: "user" | "assistant"; content: string };
 
-  useEffect(() => {
-    const chart = echarts.init(ref.current!);
-    chartRef.current = chart;
-    const onResize = () => chart.resize();
-    window.addEventListener("resize", onResize);
-    return () => { window.removeEventListener("resize", onResize); chart.dispose(); };
-  }, []);
+export default function ChatWindow() {
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [draft, setDraft] = useState("");
+  const esRef = useRef<EventSource | null>(null);
+  const retryRef = useRef(1000); // start at 1s, max 30s
+  const closedRef = useRef(false);
 
-  useEffect(() => {
-    const checkDarkMode = () => setIsDark(document.documentElement.classList.contains("dark"));
-    checkDarkMode();
-    const obs = new MutationObserver(checkDarkMode);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
+  const connect = () => {
+    if (closedRef.current) return;
+    // avoid duplicate connections
+    if (esRef.current) {
+      try { esRef.current.close(); } catch {}
+      esRef.current = null;
+    }
 
-  // render/update chart option when props or theme change
-  useEffect(() => {
-    if (!chartRef.current) return;
-    chartRef.current.setOption({
-      backgroundColor: "transparent",
-      title: { text: title, textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" } },
-      tooltip: {
-        trigger: "axis",
-        backgroundColor: isDark ? "#1e293b" : "#ffffff",
-        borderColor: isDark ? "#475569" : "#e2e8f0",
-        textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
-      },
-      xAxis: {
-        type: "category",
-        data: categories,
-        axisLine: { lineStyle: { color: isDark ? "#475569" : "#cbd5e1" } },
-        axisLabel: { color: isDark ? "#94a3b8" : "#64748b" },
-      },
-      yAxis: {
-        type: "value",
-        axisLine: { lineStyle: { color: isDark ? "#475569" : "#cbd5e1" } },
-        axisLabel: { color: isDark ? "#94a3b8" : "#64748b" },
-        splitLine: { lineStyle: { color: isDark ? "#334155" : "#e2e8f0" } },
-      },
-      series: series.map((s) => ({ name: s.name, type: "line", data: s.data })),
-    });
-  }, [title, categories, series, isDark]);
-
-  // optional SSE: append live points when streamSessionId is set
-  useEffect(() => {
-    if (!streamSessionId || !chartRef.current) return;
-    const es = new EventSource(`/api/webhook/stream?sessionId=${encodeURIComponent(streamSessionId)}`);
+    const es = new EventSource("/api/webhook/stream?sessionId=global");
+    esRef.current = es;
 
     es.onmessage = (e) => {
-      const data = JSON.parse(e.data); // { id, text, ... }
-      // Update chart directly to avoid re-rendering parent
-      const chart = chartRef.current!;
-      const option = chart.getOption() as any;
-
-      const x = new Date(data.id || Date.now()).toLocaleTimeString();
-      const y = Number(data.text); // adapt to your payload
-
-      const xs = option.xAxis[0].data as string[];
-      const series0 = option.series[0].data as number[];
-
-      xs.push(x);
-      series0.push(y);
-      // keep last 50 points
-      if (xs.length > 50) xs.splice(0, xs.length - 50);
-      if (series0.length > 50) series0.splice(0, series0.length - 50);
-
-      chart.setOption({ xAxis: [{ data: xs }], series: [{ data: series0 }] });
+      retryRef.current = 1000; // reset backoff on success
+      const data = JSON.parse(e.data);
+      setMessages((prev) => [...prev, { role: "assistant", content: data.text ?? JSON.stringify(data) }]);
     };
 
-    es.onerror = () => { es.close(); setTimeout(() => location.reload(), 1500); };
-    return () => es.close();
-  }, [streamSessionId]);
+    es.onerror = () => {
+      try { es.close(); } catch {}
+      esRef.current = null;
+      const wait = Math.min(retryRef.current, 30000);
+      // try again without reloading the page
+      setTimeout(connect, wait);
+      retryRef.current = Math.min(wait * 2, 30000);
+    };
+  };
 
-  return <div className="rounded-2xl bg-white dark:bg-slate-800 p-4 shadow" ref={ref} style={{ height: 360 }} />;
+  useEffect(() => {
+    connect();
+    return () => {
+      closedRef.current = true;
+      try { esRef.current?.close(); } catch {}
+      esRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // (Optional) basic send handler if you want a writable chat box
+  const sendLocal = () => {
+    if (!draft.trim()) return;
+    setMessages((m) => [...m, { role: "user", content: draft }]);
+    setDraft("");
+    // If you later want to POST to your own /api/chat, do it here.
+  };
+
+  return (
+    <section className="rounded-2xl bg-white dark:bg-slate-800 p-4 shadow">
+      <h2 className="text-lg font-semibold mb-3">Chat</h2>
+
+      <div className="space-y-2 max-h-80 overflow-auto mb-3">
+        {messages.map((m, i) => (
+          <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
+            <span className="inline-block px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700">
+              {m.content}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Type a message…"
+          className="flex-1 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2"
+        />
+        <button
+          onClick={sendLocal}
+          className="rounded-xl px-4 py-2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+        >
+          Send
+        </button>
+      </div>
+    </section>
+  );
 }
