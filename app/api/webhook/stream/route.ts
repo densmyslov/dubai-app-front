@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
-import { messageQueue } from '../../../lib/messageQueue';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { KVNamespace } from '@cloudflare/workers-types';
+import { messageQueue, type WebhookMessage } from '../../../lib/messageQueue';
+import { getRecentMessagesFromKV } from '../../../lib/webhookStorage';
 
 export const runtime = 'edge';
 
@@ -15,6 +18,9 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
 	const sessionId = request.nextUrl.searchParams.get('sessionId') || undefined;
+	const env = getRequestContext().env as Record<string, unknown>;
+	const kv = env.WEBHOOK_KV as KVNamespace | undefined;
+	const recentFromKV = kv ? await getRecentMessagesFromKV(kv, 20, sessionId) : [];
 
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
@@ -27,11 +33,17 @@ export async function GET(request: NextRequest) {
 				)
 			);
 
+			let lastTimestamp = recentFromKV.length
+				? recentFromKV[recentFromKV.length - 1]?.timestamp ?? 0
+				: 0;
+
 			// Deliver new messages as they arrive
 			const unsubscribe = messageQueue.subscribe((message) => {
 				if (sessionId && message.sessionId && message.sessionId !== sessionId) {
 					return;
 				}
+
+				lastTimestamp = Math.max(lastTimestamp, message.timestamp);
 
 				const payload = {
 					type: 'webhook_message',
@@ -43,9 +55,17 @@ export async function GET(request: NextRequest) {
 				controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 			});
 
-			// Replay a small history on connect to smooth reconnects
-			const recent = messageQueue.getRecentMessages(5, sessionId);
-			for (const message of recent) {
+			const history: WebhookMessage[] = [...recentFromKV];
+			const existingIds = new Set(history.map((item) => item.id));
+			const localRecent = messageQueue.getRecentMessages(20, sessionId);
+			for (const message of localRecent) {
+				if (!existingIds.has(message.id)) {
+					history.push(message);
+				}
+			}
+			history.sort((a, b) => a.timestamp - b.timestamp);
+
+			for (const message of history.slice(-20)) {
 				const payload = {
 					type: 'webhook_message',
 					id: message.id,
@@ -66,9 +86,42 @@ export async function GET(request: NextRequest) {
 				}
 			}, 30_000);
 
+			const poller = kv
+				? setInterval(async () => {
+					try {
+						const latest = await getRecentMessagesFromKV(kv, 20, sessionId);
+						const newMessages = latest.filter((message) => message.timestamp > lastTimestamp);
+
+						if (newMessages.length === 0) {
+							return;
+						}
+
+						newMessages.sort((a, b) => a.timestamp - b.timestamp);
+						for (const message of newMessages) {
+							lastTimestamp = Math.max(lastTimestamp, message.timestamp);
+							controller.enqueue(
+								encoder.encode(
+									`data: ${JSON.stringify({
+										type: 'webhook_message',
+										id: message.id,
+										content: message.content,
+										timestamp: message.timestamp,
+									})}\n\n`
+								)
+							);
+						}
+					} catch (error) {
+						console.error('KV poll failed:', error);
+					}
+				}, 5_000)
+				: null;
+
 			request.signal.addEventListener('abort', () => {
 				clearInterval(heartbeat);
 				unsubscribe();
+				if (poller) {
+					clearInterval(poller);
+				}
 				controller.close();
 			});
 		},

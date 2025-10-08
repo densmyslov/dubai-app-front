@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { messageQueue } from '../../lib/messageQueue';
+import { appendMessageToKV } from '../../lib/webhookStorage';
 
 export const runtime = 'edge';
 
@@ -92,6 +95,16 @@ export async function POST(request: NextRequest) {
 				? sessionId
 				: undefined
 		);
+
+		const env = getRequestContext().env as Record<string, unknown>;
+		const kv = env.WEBHOOK_KV as KVNamespace | undefined;
+		if (kv) {
+			try {
+				await appendMessageToKV(kv, webhookMessage);
+			} catch (kvError) {
+				console.error('Failed to persist webhook message to KV:', kvError);
+			}
+		}
 
 		return NextResponse.json(
 			{
