@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 
 // The Cloudflare runtime provides the KV binding on process.env in Pages Functions.
 const getKV = () => {
-  // @ts-ignore
   return process.env.WEBHOOK_KV as KVNamespace | undefined;
 };
 
