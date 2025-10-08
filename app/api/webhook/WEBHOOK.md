@@ -6,18 +6,21 @@ The chat window can receive real-time messages from external services via webhoo
 
 ## Architecture
 
+The architecture uses Cloudflare's native infrastructure for resilience and scale.
+
 ```
-External Service → POST /api/webhook → Message Queue → SSE Stream → Chat Window
+External Service → POST /api/webhook (CF Function) → Cloudflare Queue → Queue Consumer (CF Function) → Cloudflare KV → SSE Stream → Chat Window
 ```
 
 ## Setup
 
 ### 1. Environment Variables (Optional)
 
-Add to `.env.local` for webhook authentication:
+Set your webhook secret in your Cloudflare project's secrets. This is more secure than a file.
 
+For Pages projects, use:
 ```bash
-WEBHOOK_SECRET=your-secret-key-here
+npx wrangler pages secret put WEBHOOK_SECRET
 ```
 
 If set, all webhook requests must include this secret in the `X-Webhook-Secret` header.
@@ -47,7 +50,7 @@ X-Webhook-Secret: your-secret-key-here  # Optional, only if WEBHOOK_SECRET is se
 ```json
 {
   "success": true,
-  "messageId": "1234567890-abc123",
+  "messageId": "a-random-uuid",
   "timestamp": 1234567890000
 }
 ```
@@ -61,56 +64,6 @@ curl -X POST https://your-app.com/api/webhook \
   -d '{"message": "Hello from external service!"}'
 ```
 
-### 4. Example: JavaScript/Node.js
-
-```javascript
-async function sendWebhookMessage(message) {
-  const response = await fetch('https://your-app.com/api/webhook', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Webhook-Secret': 'your-secret-key-here',
-    },
-    body: JSON.stringify({ message }),
-  });
-
-  return response.json();
-}
-
-// Usage
-await sendWebhookMessage('Alert: New property listed in Dubai Marina!');
-```
-
-### 5. Example: Python
-
-```python
-import requests
-
-def send_webhook_message(message, session_id=None):
-    url = "https://your-app.com/api/webhook"
-    headers = {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": "your-secret-key-here"
-    }
-    data = {"message": message}
-
-    if session_id:
-        data["sessionId"] = session_id
-
-    response = requests.post(url, json=data, headers=headers)
-    return response.json()
-
-# Usage
-send_webhook_message("Price alert: Marina apartments -5%!")
-```
-
-## Message Display
-
-Webhook messages appear in the chat window with:
-- **Purple background** (light/dark mode support)
-- **"Webhook" badge** with envelope icon
-- **Left-aligned** (distinguishable from user/assistant messages)
-
 ## Health Check
 
 Check webhook service status:
@@ -122,51 +75,21 @@ GET https://your-app.com/api/webhook
 Response:
 ```json
 {
-  "status": "ok",
-  "activeConnections": 3
+  "status": "ok"
 }
 ```
 
 ## Session Targeting (Advanced)
 
-To send messages to specific chat sessions:
+To send a message to a specific user's chat window, include their `sessionId` in the webhook payload. The `sessionId` is available in the chat client.
 
-1. Generate a unique session ID in your frontend
-2. Pass it when connecting to the SSE stream: `/api/webhook/stream?sessionId=abc123`
-3. Include the same `sessionId` in webhook requests
-
-This prevents messages from appearing in all open chats.
-
-## Use Cases
-
-- **Real Estate Alerts**: Price drops, new listings, market updates
-- **Notifications**: System alerts, important updates
-- **Third-Party Integrations**: Zapier, IFTTT, custom automations
-- **Admin Broadcasts**: Send messages to all active users
-- **Bot Responses**: External AI/bot services sending responses
-
-## Security Considerations
-
-1. **Always use WEBHOOK_SECRET** in production
-2. **Validate message content** before sending
-3. **Rate limiting**: Consider implementing rate limits for webhook endpoint
-4. **HTTPS only**: Never use HTTP for webhook endpoints
-5. **Log webhook activity**: Monitor for abuse/debugging
-
-## Troubleshooting
-
-### Messages not appearing
-
-1. Check chat window is open (SSE connection only active when open)
-2. Verify webhook secret matches (if using authentication)
-3. Check browser console for SSE errors
-4. Verify webhook endpoint returns `success: true`
+## Reliability
 
 ### Connection drops
 
-- SSE has 30-second heartbeat to keep connection alive
-- Browser will auto-reconnect on network issues
-- Recent messages (last 5) are replayed on reconnection
+- SSE has a heartbeat to keep the connection alive.
+- The browser will automatically attempt to reconnect on network issues.
+- Messages are stored temporarily in Cloudflare KV and will be picked up by the client upon reconnection.
 
 ### Testing locally
 
@@ -176,7 +99,7 @@ npm run dev
 
 # Terminal 2: Send test webhook
 curl -X POST http://localhost:3000/api/webhook \
-  -H "Content-Type: application/json" \
+  -H "Content-Type": "application/json" \
   -d '{"message": "Test message!"}'
 ```
 
@@ -184,17 +107,13 @@ curl -X POST http://localhost:3000/api/webhook \
 
 ### Cloudflare Pages/Workers
 
-- Works out-of-the-box with Cloudflare Pages
-- In-memory queue resets on worker restarts (consider Durable Objects for persistence)
-- Set `WEBHOOK_SECRET` in Cloudflare Pages environment variables
+- The previous in-memory queue has been replaced with **Cloudflare Queues** and **Cloudflare KV** for persistent, reliable message delivery. This architecture is production-ready.
+- Set `WEBHOOK_SECRET` in your project's secrets using `npx wrangler pages secret put WEBHOOK_SECRET`.
+- Bindings for the queue and KV store are managed in `wrangler.toml`.
 
 ### Scaling Considerations
 
-For high-traffic production:
-1. Replace in-memory queue with Redis or Cloudflare KV
-2. Implement webhook request rate limiting
-3. Use Cloudflare Durable Objects for distributed state
-4. Add message persistence for reliability
+The current implementation using Cloudflare Queues and KV is designed for high-traffic production and already addresses previous scaling concerns.
 
 ## API Reference
 
@@ -218,7 +137,6 @@ For high-traffic production:
 
 **Response:**
 - `status` (string): Service status ("ok")
-- `activeConnections` (number): Number of active SSE connections
 
 ### GET /api/webhook/stream
 
@@ -229,12 +147,4 @@ For high-traffic production:
 Server-Sent Events stream with:
 - `type: 'connected'`: Initial connection confirmation
 - `type: 'webhook_message'`: New webhook message
-- Heartbeat comments every 30 seconds
-
-## Example Integration: Zapier
-
-1. Create a Zapier webhook trigger
-2. Add a "POST" action to your app's webhook endpoint
-3. Set headers and body as shown in examples above
-4. Test the connection
-5. Messages will appear in real-time in the chat window
+- Heartbeat comments every 2 seconds

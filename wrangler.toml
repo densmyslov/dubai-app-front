@@ -2,3 +2,13 @@ name = "dubai-app-front"
 compatibility_date = "2024-11-01"
 pages_build_output_dir = ".open-next"
 compatibility_flags = ["nodejs_compat"]
+
+# Bind the KV namespace for message storage
+[[kv_namespaces]]
+binding = "WEBHOOK_KV"
+id = "2d0ed139149e47e0a6fce80719d2d44f"
+
+# Bind the Queue for message ingestion
+[[queues.producers]]
+binding = "MESSAGE_QUEUE"
+queue = "dubai-app-queue" # the name of the queue
