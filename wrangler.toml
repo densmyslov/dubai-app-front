@@ -12,3 +12,17 @@ id = "2d0ed139149e47e0a6fce80719d2d44f"
 [[queues.producers]]
 binding = "MESSAGE_QUEUE"
 queue = "dubai-app-queue" # the name of the queue
+
+# Bind the Durable Object class
+[[durable_objects.bindings]]
+name = "SESSIONS"                   # <-- this must match your Pages Functions env type
+class_name = "SessionHub"           # <-- exported class in functions/SessionHub.ts
+
+# First migration to create the class
+[[migrations]]
+tag = "v1"                          # bump to v2, v3... when you change DO classes
+new_classes = ["SessionHub"]
+
+# (Optional) Vars, KV, R2, etc. can go here too
+# [vars]
+# MY_FLAG = "1"
