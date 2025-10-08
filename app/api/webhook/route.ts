@@ -1,7 +1,7 @@
 // app/api/webhook/stream/route.ts
 import { NextRequest } from 'next/server';
 
-export const runtime = 'nodejs'; // or 'edge'
+export const runtime = 'edge';
 
 type Listener = (payload: unknown) => void;
 

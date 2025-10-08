@@ -243,13 +243,13 @@ function broadcast(message: any) {
 // This is a global function that the webhook can call.
 (global as any).broadcastMessage = broadcast;
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       clients.add(controller);
       console.log('Client connected. Total clients:', clients.size);
     },
-    cancel(reason) {
+    cancel(_reason) {
       // 'this' is not available in arrow functions, so we need to find the controller to remove it.
       // This simple implementation can't do that without iterating, so we'll rely on the controller being closed.
       // For a robust solution, you'd map controllers to an ID.
