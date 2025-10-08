@@ -1,70 +1,88 @@
+// app/api/webhook/stream/route.ts
 import { NextRequest } from 'next/server';
 
-// The Cloudflare runtime provides the KV binding on process.env in Pages Functions.
-const getKV = () => {
-  // @ts-expect-error - WEBHOOK_KV is injected by the Cloudflare runtime and is not visible to TypeScript during the build process.
-  return process.env.WEBHOOK_KV as KVNamespace | undefined;
-};
+// If you're on next-on-pages, KV is usually on globalThis.
+// You can also set this via a simple shim in _worker.ts if needed.
+function getKV(): KVNamespace | undefined {
+  // @ts-expect-error runtime binding provided by Cloudflare
+  return (globalThis as any).WEBHOOK_KV as KVNamespace | undefined;
+}
 
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const sessionId = request.nextUrl.searchParams.get('sessionId') || 'global';
+  const sessionId = request.nextUrl.searchParams.get('sessionId') ?? 'global';
   const kv = getKV();
 
   if (!kv) {
-    const errorResponse = JSON.stringify({ error: "KV store not configured." });
-    return new Response(errorResponse, { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'KV store not configured.' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      let lastKey = ''; // Keep track of the last key sent to avoid duplicates
+    start(controller) {
+      const enc = new TextEncoder();
 
-      const send = (type: string, data: any) => {
-        controller.enqueue(encoder.encode(`event: ${type}\n`));
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      const send = (type: string, data: unknown) => {
+        controller.enqueue(enc.encode(`event: ${type}\n`));
+        controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
+
+      // Optional: keep-alive comments
+      const heartbeat = () => controller.enqueue(enc.encode(`: heartbeat\n\n`));
 
       send('connected', { message: 'Connection established with KV store' });
 
-      const interval = setInterval(async () => {
-        const prefix = `session:${sessionId}:`;
-        // Poll for new keys
-        const list = await kv.list({ prefix, limit: 20 });
+      let lastKey = ''; // track the highest (lexicographically) key we've sent
+      const prefix = `session:${sessionId}:`;
 
-        if (list.keys.length > 0) {
-          for (const key of list.keys) {
-            // Only process keys that are newer than the last one we sent
-            if (key.name > lastKey) {
-                const value = await kv.get(key.name);
-                if (value) {
-                  send('webhook_message', JSON.parse(value));
-                }
+      const tick = async () => {
+        try {
+          // Note: KV list is paginated; if you expect bursts > limit, loop with cursors.
+          const list = await kv.list({ prefix, limit: 100 });
+
+          if (list.keys.length > 0) {
+            // If your keys include a sortable suffix (e.g., ISO timestamp), this works.
+            // Otherwise, persist a "last processed" pointer in KV instead of local memory.
+            for (const key of list.keys) {
+              if (lastKey && key.name <= lastKey) continue;
+
+              const value = await kv.get(key.name, 'json'); // typed JSON
+              if (value !== null) {
+                send('webhook_message', value);
+              }
             }
+            lastKey = list.keys[list.keys.length - 1].name;
           }
-          // Update our position to the last key we've seen in this batch
-          lastKey = list.keys[list.keys.length - 1].name;
-        }
-        
-        // Send a comment as a heartbeat to keep the connection alive
-        controller.enqueue(encoder.encode(': heartbeat\n\n'));
-      }, 2000); // Poll every 2 seconds
 
-      // Clean up the interval when the client disconnects
-      request.signal.onabort = () => {
-        clearInterval(interval);
-        controller.close();
+          heartbeat();
+        } catch (err) {
+          send('error', { message: (err as Error).message ?? 'unknown error' });
+        }
       };
+
+      const interval = setInterval(tick, 2000);
+      // kick immediately so the client doesn't wait 2s for first batch
+      tick();
+
+      const abort = () => {
+        clearInterval(interval);
+        try { controller.close(); } catch {}
+      };
+      request.signal.addEventListener('abort', abort);
     },
   });
 
   return new Response(stream, {
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
+      // Helps on some proxies/CDNs
+      'X-Accel-Buffering': 'no',
     },
   });
 }
