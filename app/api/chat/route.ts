@@ -14,6 +14,10 @@ async function getApiAuthToken(): Promise<string | null> {
   return process.env.KEY || null;
 }
 
+export async function GET() {
+  return new Response('Chat API is running.', { status: 200 });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {

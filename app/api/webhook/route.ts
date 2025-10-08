@@ -3,50 +3,43 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'edge';
 
-// In-memory store for SSE clients.
-const clients = new Set<ReadableStreamDefaultController>();
-let keepAliveInterval: NodeJS.Timeout;
+const CACHE_KEY = 'webhook-message-cache-key';
 
-function broadcast(message: any) {
-  const formattedMessage = `data: ${JSON.stringify(message)}\n\n`;
-  clients.forEach(controller => {
-    try {
-      controller.enqueue(new TextEncoder().encode(formattedMessage));
-    } catch (e) {
-      console.error('Failed to send to a client, removing.', e);
-      clients.delete(controller);
-    }
-  });
-}
-
-// SSE connection handler
+// SSE connection handler (client polls for messages)
 export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
-    start(controller) {
-      clients.add(controller);
-      console.log(`Client connected. Total clients: ${clients.size}`);
+    async start(controller) {
+      const encoder = new TextEncoder();
 
-      // Start keep-alive if this is the first client
-      if (clients.size === 1) {
-        keepAliveInterval = setInterval(() => {
-          // Sending a comment to keep the connection alive
-          controller.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
-        }, 10000);
-      }
+      // Function to check cache and send message
+      const checkCache = async () => {
+        try {
+          const cache = caches.default;
+          const response = await cache.match(CACHE_KEY);
 
-      request.signal.addEventListener('abort', () => {
-        clients.delete(controller);
-        console.log(`Client disconnected. Total clients: ${clients.size}`);
-        // Stop keep-alive if no clients are left
-        if (clients.size === 0) {
-          clearInterval(keepAliveInterval);
+          if (response) {
+            const message = await response.json();
+            // Send the message to the client
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(message)}\n\n`));
+            // Delete the message from the cache so it's not sent again
+            await cache.delete(CACHE_KEY);
+            console.log('Message sent to client and cache cleared.');
+          }
+        } catch (e) {
+          console.error('Error in cache check:', e);
         }
+      };
+
+      // Poll the cache every 2 seconds
+      const intervalId = setInterval(checkCache, 2000);
+
+      // Clean up when the client disconnects
+      request.signal.addEventListener('abort', () => {
+        clearInterval(intervalId);
+        controller.close();
+        console.log('Client disconnected, polling stopped.');
       });
     },
-    cancel() {
-      // This is called when the client side closes the connection.
-      // The abort listener above will handle cleanup.
-    }
   });
 
   return new Response(stream, {
@@ -58,20 +51,29 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// Webhook POST handler
+// Webhook POST handler (writes message to cache)
 export async function POST(request: NextRequest) {
   try {
     const body: any = await request.json();
-    console.log('Webhook received:', body);
+    console.log('Webhook received, writing to cache:', body);
 
-    broadcast({
+    const message = {
       id: new Date().toISOString(),
       text: body.message || 'No message content',
+    };
+
+    // Create a response object to store in the cache
+    const cacheResponse = new Response(JSON.stringify(message), {
+      headers: { 'Content-Type': 'application/json' },
     });
+
+    // Put the response in the default cache
+    const cache = caches.default;
+    await cache.put(CACHE_KEY, cacheResponse);
 
     return NextResponse.json({ status: 'ok' });
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('Webhook POST error:', error);
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
 }
