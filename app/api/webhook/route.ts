@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
       // Start keep-alive if this is the first client
       if (clients.size === 1) {
         keepAliveInterval = setInterval(() => {
-          broadcast({ type: 'heartbeat' });
+          // Sending a comment to keep the connection alive
+          controller.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
         }, 10000);
       }
 
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
         }
       });
     },
+    cancel() {
+      // This is called when the client side closes the connection.
+      // The abort listener above will handle cleanup.
+    }
   });
 
   return new Response(stream, {
@@ -69,7 +74,5 @@ export async function POST(request: NextRequest) {
     console.error('Webhook error:', error);
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }
-}
-  });
 }
 
