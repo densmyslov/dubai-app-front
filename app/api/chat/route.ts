@@ -1,8 +1,7 @@
 // app/api/chat/route.ts
 import { NextRequest } from 'next/server';
-import crypto from 'crypto';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 interface Message {
   role: 'user' | 'assistant';

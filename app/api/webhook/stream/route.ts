@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { messageQueue } from '../../../lib/messageQueue';
 
+export const runtime = 'edge';
+
 // ============================================================================
 // SSE Stream for Webhook Messages
 // ============================================================================

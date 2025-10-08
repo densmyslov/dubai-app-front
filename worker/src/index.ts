@@ -1,7 +1,10 @@
+import type { ExecutionContext } from '@cloudflare/workers-types';
+
 export default {
   async fetch(req: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
-    const cache = caches.default;
+    const cacheStorage = caches as unknown as CacheStorage & { default: Cache };
+    const cache = cacheStorage.default;
 
     const cacheFetch = async (targetUrl: string) => {
       const cached = await cache.match(req);

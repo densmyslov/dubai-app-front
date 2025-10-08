@@ -3,6 +3,8 @@ import KPICard from './components/KPICard';
 import ChartCard from './components/ChartCard';
 import { API_BASE } from './lib/config';
 
+export const runtime = 'edge';
+
 async function fetchJSON(path: string) {
   const url = API_BASE ? `${API_BASE}${path}` : path;
   const res = await fetch(url, { cache: 'no-store' }).catch(() => null);
