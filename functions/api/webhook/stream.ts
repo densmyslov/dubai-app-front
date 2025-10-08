@@ -1,3 +1,4 @@
+// functions/api/webhook/stream.ts
 export const onRequestGet: PagesFunction<{ SESSIONS: DurableObjectNamespace }> =
   async ({ request, env }) => {
     const url = new URL(request.url);

@@ -1,3 +1,4 @@
+// app/page.tsx
 import React from 'react';
 import KPICard from './components/KPICard';
 import ChartCard from './components/ChartCard';
