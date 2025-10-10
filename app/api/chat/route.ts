@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       stream?: boolean;
       model?: string;
       max_tokens?: number;
-      sessionId?: string;
+  sessionId?: string;
+  chatUrl?: string;
     };
 
     const lambdaUrl = process.env.LAMBDA_FUNCTION_URL;
@@ -103,9 +104,14 @@ export async function POST(request: NextRequest) {
         },
       };
       const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : undefined;
+      const chatUrl = typeof body.chatUrl === 'string' && body.chatUrl.trim() ? body.chatUrl.trim() : undefined;
       if (sessionId) {
         payload.session_id = sessionId;
         (payload.metadata as Record<string, unknown>).session_id = sessionId;
+      }
+      if (chatUrl) {
+        payload.chat_url = chatUrl;
+        (payload.metadata as Record<string, unknown>).chat_url = chatUrl;
       }
       if (resolvedModel) payload.model = resolvedModel;
 

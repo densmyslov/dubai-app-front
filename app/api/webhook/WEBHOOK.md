@@ -54,7 +54,7 @@ npm run deploy
 
 ### 4. Collect the active session ID
 
-When an operator opens the chat window, it now generates (or resumes) a unique `sessionId` and displays it under the chat title. Use the **Copy** button in the header to grab this value and share it with any system that needs to route replies back to that chat. The ID is also persisted in the browser so the same user keeps their session between visits.
+When an operator opens the chat window, it now generates (or resumes) a unique `sessionId` and displays it under the chat title. Use the **Copy** button in the header to grab this value and share it with any system that needs to route replies back to that chat. The ID is also persisted in the browser so the same user keeps their session between visits, and every outbound chat message now includes a `chatUrl` that embeds this session ID for quick linking.
 
 If a webhook payload omits the `sessionId`, the message is treated as global and delivered to every connected chat, mirroring the legacy behavior.
 
@@ -126,9 +126,9 @@ Response:
 
 ## Session Targeting (Advanced)
 
-- The chat frontend includes the `sessionId` in every `/api/chat` request and surfaces it in the UI header for easy copying.
+- The chat frontend includes the `sessionId` and `chatUrl` in every `/api/chat` request and surfaces the ID in the UI header for easy copying.
 - Webhook payloads that include the same `sessionId` will only be delivered to that chat. Payloads without `sessionId` remain global.
-- You can persist your own mapping (for example tying `sessionId` to a logged-in user or CRM record) by storing the value when the chat connects.
+- You can persist your own mapping (for example tying `sessionId` to a logged-in user or CRM record) by storing the value when the chat connects, and the provided `chatUrl` lets operators jump straight back to the same session from external tooling.
 
 ## Reliability
 

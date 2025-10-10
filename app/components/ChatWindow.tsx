@@ -222,10 +222,17 @@ export default function ChatWindow() {
     abortRef.current = ac;
 
     try {
+      const chatUrl = (() => {
+        if (typeof window === 'undefined') return undefined;
+        const url = new URL(window.location.href);
+        url.searchParams.set('sessionId', sessionId);
+        return url.toString();
+      })();
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: conversation, sessionId }),
+        body: JSON.stringify({ messages: conversation, sessionId, chatUrl }),
         signal: ac.signal,
       });
 
