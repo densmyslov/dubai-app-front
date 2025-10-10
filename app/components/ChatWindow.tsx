@@ -22,12 +22,34 @@ export default function ChatWindow() {
   // State
   // --------------------------------------------------------------------------
 
+  const createSessionId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  };
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [sessionId, setSessionId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem('chatSessionId');
+      if (stored) {
+        return stored;
+      }
+    }
+    return createSessionId();
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('chatSessionId', sessionId);
+  }, [sessionId]);
 
   // --------------------------------------------------------------------------
   // Refs
@@ -94,7 +116,7 @@ export default function ChatWindow() {
     const connect = () => {
       if (!isActive) return;
       sourceRef.current?.close();
-      const es = new EventSource('/api/webhook/stream?sessionId=global');
+  const es = new EventSource(`/api/webhook/stream?sessionId=${encodeURIComponent(sessionId)}`);
       sourceRef.current = es;
 
       es.onopen = () => {
@@ -143,7 +165,7 @@ export default function ChatWindow() {
       sourceRef.current?.close();
       sourceRef.current = null;
     };
-  }, [isOpen]);
+  }, [isOpen, sessionId]);
 
   // --------------------------------------------------------------------------
   // Early Returns
@@ -180,7 +202,7 @@ export default function ChatWindow() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: conversation }),
+        body: JSON.stringify({ messages: conversation, sessionId }),
         signal: ac.signal,
       });
 
@@ -324,7 +346,11 @@ export default function ChatWindow() {
   if (!isOpen) {
     return (
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          setSessionId(createSessionId());
+          setMessages([]);
+          setIsOpen(true);
+        }}
         className="fixed bottom-6 right-6 bg-blue-600 text-white rounded-full p-4 shadow-lg hover:bg-blue-700 transition-colors"
         aria-label="Open chat"
       >
@@ -348,7 +374,28 @@ export default function ChatWindow() {
     <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl flex flex-col">
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-3">
-          <h3 className="font-semibold text-slate-900 dark:text-slate-100">Chat with Claude</h3>
+          <div className="flex flex-col">
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">Chat with Claude</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                Session: {sessionId}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                    void navigator.clipboard.writeText(sessionId).catch((error) => {
+                      console.error('Failed to copy session ID', error);
+                    });
+                  }
+                }}
+                className="text-[10px] font-semibold text-blue-500 hover:text-blue-600 focus:outline-none"
+                title="Copy session ID"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
           <div className="flex items-center gap-1">
             <div
               className={`w-2 h-2 rounded-full ${

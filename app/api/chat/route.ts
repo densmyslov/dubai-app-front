@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       stream?: boolean;
       model?: string;
       max_tokens?: number;
+      sessionId?: string;
     };
 
     const lambdaUrl = process.env.LAMBDA_FUNCTION_URL;
@@ -101,6 +102,11 @@ export async function POST(request: NextRequest) {
           user_id: userId,
         },
       };
+      const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : undefined;
+      if (sessionId) {
+        payload.session_id = sessionId;
+        (payload.metadata as Record<string, unknown>).session_id = sessionId;
+      }
       if (resolvedModel) payload.model = resolvedModel;
 
       upstream = await fetch(lambdaUrl, {
