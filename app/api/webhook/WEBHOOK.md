@@ -52,7 +52,13 @@ Deploying after the KV binding is in place ensures the new environment variables
 npm run deploy
 ```
 
-### 4. Send a webhook message
+### 4. Collect the active session ID
+
+When an operator opens the chat window, it now generates (or resumes) a unique `sessionId` and displays it under the chat title. Use the **Copy** button in the header to grab this value and share it with any system that needs to route replies back to that chat. The ID is also persisted in the browser so the same user keeps their session between visits.
+
+If a webhook payload omits the `sessionId`, the message is treated as global and delivered to every connected chat, mirroring the legacy behavior.
+
+### 5. Send a webhook message
 
 #### Endpoint
 ```
@@ -82,7 +88,7 @@ X-Webhook-Secret: your-secret-key-here  # Optional, only if WEBHOOK_SECRET is se
 }
 ```
 
-### 3. Example: cURL
+### 6. Example: cURL
 
 ```bash
 curl -X POST https://your-app.com/api/webhook \
@@ -91,7 +97,7 @@ curl -X POST https://your-app.com/api/webhook \
   -d '{"message": "Hello from external service!"}'
 ```
 
-### 5. Verify the SSE stream
+### 7. Verify the SSE stream
 
 Open a stream connection and confirm you receive both historical and new messages:
 
@@ -120,7 +126,9 @@ Response:
 
 ## Session Targeting (Advanced)
 
-To send a message to a specific user's chat window, include their `sessionId` in the webhook payload. The `sessionId` is available in the chat client.
+- The chat frontend includes the `sessionId` in every `/api/chat` request and surfaces it in the UI header for easy copying.
+- Webhook payloads that include the same `sessionId` will only be delivered to that chat. Payloads without `sessionId` remain global.
+- You can persist your own mapping (for example tying `sessionId` to a logged-in user or CRM record) by storing the value when the chat connects.
 
 ## Reliability
 
