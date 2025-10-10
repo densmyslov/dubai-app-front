@@ -127,6 +127,29 @@ export default function ChatWindow() {
       es.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
+          const isObject = payload && typeof payload === 'object';
+
+          if (isObject && 'type' in payload) {
+            if (payload.type === 'connected') {
+              return;
+            }
+
+            if (payload.type === 'webhook_message') {
+              const content =
+                typeof payload.content === 'string'
+                  ? payload.content
+                  : typeof payload.message === 'string'
+                  ? payload.message
+                  : JSON.stringify(payload);
+
+              setMessages((prev) => [
+                ...prev,
+                { role: 'assistant', content },
+              ]);
+              return;
+            }
+          }
+
           const maybeText =
             typeof payload === 'string'
               ? payload
