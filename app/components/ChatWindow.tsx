@@ -1,15 +1,15 @@
 // app/components/ChatWindow.tsx
-'use client';
+"use client";
 
-import { useState, useEffect, useRef } from 'react';
-import type { FormEvent } from 'react';
+import { useState, useEffect, useRef } from "react";
+import type { FormEvent } from "react";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 interface Message {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 }
 
@@ -23,32 +23,31 @@ export default function ChatWindow() {
   // --------------------------------------------------------------------------
 
   const createSessionId = () => {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
       return crypto.randomUUID();
     }
-
     return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<
+    "disconnected" | "connecting" | "connected"
+  >("disconnected");
   const [sessionId, setSessionId] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem('chatSessionId');
-      if (stored) {
-        return stored;
-      }
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("chatSessionId");
+      if (stored) return stored;
     }
     return createSessionId();
   });
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('chatSessionId', sessionId);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("chatSessionId", sessionId);
   }, [sessionId]);
 
   // --------------------------------------------------------------------------
@@ -73,13 +72,13 @@ export default function ChatWindow() {
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Auto-resize textarea based on input content
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
     }
   }, [input]);
@@ -87,7 +86,7 @@ export default function ChatWindow() {
   // Subscribe to webhook messages via SSE when chat is open
   useEffect(() => {
     if (!isOpen) {
-      setConnectionStatus('disconnected');
+      setConnectionStatus("disconnected");
       attemptRef.current = 0;
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
@@ -99,7 +98,7 @@ export default function ChatWindow() {
     }
 
     let isActive = true;
-    setConnectionStatus('connecting');
+    setConnectionStatus("connecting");
 
     const scheduleReconnect = () => {
       if (!isActive) return;
@@ -113,64 +112,91 @@ export default function ChatWindow() {
       }, delay);
     };
 
+    const appendToAssistant = (delta: string) => {
+      if (!delta) return;
+      setMessages(prev => {
+        if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
+          return [...prev, { role: "assistant", content: delta }];
+        }
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          role: "assistant",
+          content: updated[updated.length - 1].content + delta,
+        };
+        return updated;
+      });
+    };
+
+    const pushAssistantMessage = (text: string) => {
+      if (!text) return;
+      setMessages(prev => [...prev, { role: "assistant", content: text }]);
+    };
+
     const connect = () => {
       if (!isActive) return;
       sourceRef.current?.close();
-  const es = new EventSource(`/api/webhook/stream?sessionId=${encodeURIComponent(sessionId)}`);
+      const es = new EventSource(`/api/webhook/stream?sessionId=${encodeURIComponent(sessionId)}`);
       sourceRef.current = es;
 
       es.onopen = () => {
         attemptRef.current = 0;
-        setConnectionStatus('connected');
+        setConnectionStatus("connected");
       };
 
       es.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          const isObject = payload && typeof payload === 'object';
 
-          if (isObject && 'type' in payload) {
-            if (payload.type === 'connected') {
-              return;
-            }
+          // Ignore keepalives
+          if (payload?.type === "connected" || payload?.type === "ping") return;
 
-            if (payload.type === 'webhook_message') {
-              const content =
-                typeof payload.content === 'string'
-                  ? payload.content
-                  : typeof payload.message === 'string'
-                  ? payload.message
-                  : JSON.stringify(payload);
-
-              setMessages((prev) => [
-                ...prev,
-                { role: 'assistant', content },
-              ]);
-              return;
-            }
+          // Streaming chunks: append delta to the current assistant bubble
+          if (payload?.type === "chunk") {
+            const delta: string =
+              typeof payload.delta === "string"
+                ? payload.delta
+                : typeof payload.text === "string"
+                ? payload.text
+                : typeof payload.message === "string"
+                ? payload.message
+                : "";
+            if (delta) appendToAssistant(delta);
+            return;
           }
 
-          const maybeText =
-            typeof payload === 'string'
+          // Stream finished
+          if (payload?.type === "done") {
+            return; // bubble already contains final text
+          }
+
+          // Non-stream, full message from webhook
+          if (payload?.type === "webhook_message") {
+            const content: string =
+              typeof payload.content === "string"
+                ? payload.content
+                : typeof payload.message === "string"
+                ? payload.message
+                : JSON.stringify(payload);
+            pushAssistantMessage(content);
+            return;
+          }
+
+          // Fallbacks: accept plain strings or common fields
+          const maybeText: string =
+            typeof payload === "string"
               ? payload
               : payload?.text ?? payload?.message ?? JSON.stringify(payload);
 
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: String(maybeText) },
-          ]);
-        } catch (parseError) {
-          console.error('Failed to parse SSE message', parseError);
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: event.data },
-          ]);
+          pushAssistantMessage(String(maybeText));
+        } catch (err) {
+          console.error("Failed to parse SSE message", err);
+          pushAssistantMessage(event.data);
         }
       };
 
       es.onerror = (err) => {
-        console.error('EventSource error:', err);
-        setConnectionStatus('disconnected');
+        console.error("EventSource error:", err);
+        setConnectionStatus("disconnected");
         es.close();
         sourceRef.current = null;
         scheduleReconnect();
@@ -194,9 +220,7 @@ export default function ChatWindow() {
   // Early Returns
   // --------------------------------------------------------------------------
 
-  if (!mounted) {
-    return null;
-  }
+  if (!mounted) return null;
 
   // --------------------------------------------------------------------------
   // Handlers
@@ -212,10 +236,10 @@ export default function ChatWindow() {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
-    const userMessage: Message = { role: 'user', content: trimmed };
+    const userMessage: Message = { role: "user", content: trimmed };
     const conversation = [...messages, userMessage];
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
     setIsLoading(true);
 
     const ac = new AbortController();
@@ -223,21 +247,21 @@ export default function ChatWindow() {
 
     try {
       const chatUrl = (() => {
-        if (typeof window === 'undefined') return undefined;
+        if (typeof window === "undefined") return undefined;
         const url = new URL(window.location.href);
-        url.searchParams.set('sessionId', sessionId);
+        url.searchParams.set("sessionId", sessionId);
         return url.toString();
       })();
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: conversation, sessionId, chatUrl }),
         signal: ac.signal,
       });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
+        const errorText = await response.text().catch(() => "");
         const trimmedError = errorText.trim();
         const message = trimmedError || `Request failed with status ${response.status}`;
         throw new Error(message);
@@ -245,14 +269,13 @@ export default function ChatWindow() {
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
+      if (!reader) throw new Error("No response body");
 
-      if (!reader) throw new Error('No response body');
-
-      let assistantMessage = '';
-      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+      let assistantMessage = "";
+      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
 
       const { signal } = ac;
-      let buffer = '';
+      let buffer = "";
 
       while (true) {
         if (signal.aborted) {
@@ -264,8 +287,8 @@ export default function ChatWindow() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
 
         for (const event of events) {
           if (signal.aborted) {
@@ -274,23 +297,22 @@ export default function ChatWindow() {
           }
 
           const dataLines = event
-            .split('\n')
-            .filter((line) => line.startsWith('data: '))
+            .split("\n")
+            .filter((line) => line.startsWith("data: "))
             .map((line) => line.slice(6));
 
           if (dataLines.length === 0) continue;
-          const data = dataLines.join('');
-
-          if (data === '[DONE]') continue;
+          const data = dataLines.join("");
+          if (data === "[DONE]") continue;
 
           try {
             const parsed = JSON.parse(data);
 
             if (parsed?.metadata) {
-              console.log('Received metadata:', parsed.metadata);
+              console.log("Received metadata:", parsed.metadata);
             }
 
-            if (parsed.type === 'chunk' && parsed.text) {
+            if (parsed.type === "chunk" && parsed.text) {
               const text: string = parsed.text;
               for (let i = 0; i < text.length; i++) {
                 if (signal.aborted) {
@@ -299,10 +321,10 @@ export default function ChatWindow() {
                 }
 
                 assistantMessage += text[i];
-                setMessages((prev) => {
+                setMessages(prev => {
                   const updated = [...prev];
                   updated[updated.length - 1] = {
-                    role: 'assistant',
+                    role: "assistant",
                     content: assistantMessage,
                   };
                   return updated;
@@ -310,53 +332,48 @@ export default function ChatWindow() {
 
                 await new Promise<void>((resolve, reject) => {
                   if (signal.aborted) {
-                    reject(new DOMException('Aborted', 'AbortError'));
+                    reject(new DOMException("Aborted", "AbortError"));
                     return;
                   }
-
                   const timeout = setTimeout(() => {
                     if (signal.aborted) {
-                      reject(new DOMException('Aborted', 'AbortError'));
+                      reject(new DOMException("Aborted", "AbortError"));
                     } else {
                       resolve();
                     }
                   }, 20);
-
                   signal.addEventListener(
-                    'abort',
+                    "abort",
                     () => {
                       clearTimeout(timeout);
-                      reject(new DOMException('Aborted', 'AbortError'));
+                      reject(new DOMException("Aborted", "AbortError"));
                     },
                     { once: true }
                   );
                 });
               }
-            } else if (parsed.type === 'done') {
-              console.log('Conversation complete. Final metadata:', parsed.metadata);
-            } else if (parsed.type === 'error') {
-              console.error('Lambda error:', parsed.error);
+            } else if (parsed.type === "done") {
+              console.log("Conversation complete. Final metadata:", parsed.metadata);
+            } else if (parsed.type === "error") {
+              console.error("Lambda error:", parsed.error);
               throw new Error(parsed.error);
             }
           } catch (parseError) {
-            console.error('Failed to parse stream event', parseError);
+            console.error("Failed to parse stream event", parseError);
           }
         }
       }
     } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.log('Request cancelled by user');
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("Request cancelled by user");
         return;
       }
 
-      console.error('Chat error:', error);
-      const friendlyMessage = error instanceof Error ? error.message : 'Unexpected error occurred.';
-      setMessages((prev) => [
+      console.error("Chat error:", error);
+      const friendlyMessage = error instanceof Error ? error.message : "Unexpected error occurred.";
+      setMessages(prev => [
         ...prev,
-        {
-          role: 'assistant',
-          content: `Sorry, I ran into a problem: ${friendlyMessage}`,
-        },
+        { role: "assistant", content: `Sorry, I ran into a problem: ${friendlyMessage}` },
       ]);
     } finally {
       setIsLoading(false);
@@ -377,8 +394,7 @@ export default function ChatWindow() {
     return (
       <button
         onClick={() => {
-          setSessionId(createSessionId());
-          setMessages([]);
+          // IMPORTANT: do NOT regenerate the sessionId on open; keep continuity
           setIsOpen(true);
         }}
         className="fixed bottom-6 right-6 bg-blue-600 text-white rounded-full p-4 shadow-lg hover:bg-blue-700 transition-colors"
@@ -413,9 +429,9 @@ export default function ChatWindow() {
               <button
                 type="button"
                 onClick={() => {
-                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                  if (typeof navigator !== "undefined" && navigator.clipboard) {
                     void navigator.clipboard.writeText(sessionId).catch((error) => {
-                      console.error('Failed to copy session ID', error);
+                      console.error("Failed to copy session ID", error);
                     });
                   }
                 }}
@@ -429,20 +445,20 @@ export default function ChatWindow() {
           <div className="flex items-center gap-1">
             <div
               className={`w-2 h-2 rounded-full ${
-                connectionStatus === 'connected'
-                  ? 'bg-green-400 animate-pulse'
-                  : connectionStatus === 'connecting'
-                  ? 'bg-yellow-400 animate-pulse'
-                  : 'bg-red-400'
+                connectionStatus === "connected"
+                  ? "bg-green-400 animate-pulse"
+                  : connectionStatus === "connecting"
+                  ? "bg-yellow-400 animate-pulse"
+                  : "bg-red-400"
               }`}
               title={`Webhook stream: ${connectionStatus}`}
             />
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              {connectionStatus === 'connected'
-                ? 'Live'
-                : connectionStatus === 'connecting'
-                ? 'Connecting...'
-                : 'Offline'}
+              {connectionStatus === "connected"
+                ? "Live"
+                : connectionStatus === "connecting"
+                ? "Connecting..."
+                : "Offline"}
             </span>
           </div>
         </div>
@@ -481,12 +497,12 @@ export default function ChatWindow() {
           </div>
         )}
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
               className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
+                msg.role === "user"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
               }`}
             >
               <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
@@ -503,7 +519,7 @@ export default function ChatWindow() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 void sendMessage();
               }
@@ -512,14 +528,14 @@ export default function ChatWindow() {
             disabled={isLoading}
             rows={1}
             className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 dark:disabled:bg-slate-800 resize-none overflow-y-auto"
-            style={{ maxHeight: '120px' }}
+            style={{ maxHeight: "120px" }}
           />
           <button
-            type={isLoading ? 'button' : 'submit'}
+            type={isLoading ? "button" : "submit"}
             onClick={isLoading ? handleStop : undefined}
             disabled={!isLoading && !input.trim()}
             className="bg-blue-600 text-white rounded-full px-4 py-2 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-            title={isLoading ? 'Stop generating' : 'Send message'}
+            title={isLoading ? "Stop generating" : "Send message"}
           >
             {isLoading ? (
               <svg className="animate-spin h-5 w-5 cursor-pointer" fill="none" viewBox="0 0 24 24">
