@@ -24,6 +24,8 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
 /app
   /api
     /chat           # Chat API route (proxies to Lambda)
+    /charts         # POST endpoint for chart webhooks (separate from chat)
+    /charts/stream  # SSE stream for real-time chart updates
     /manifest       # GET/POST manifest (dashboard content)
     /webhook        # POST endpoint for external messages
     /webhook/stream # SSE stream for real-time messages
@@ -34,11 +36,17 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
     MarkdownWidget.tsx   # Markdown content widget
     TableWidget.tsx      # Table widget
     ChatWindow.tsx       # Chat interface
+    DynamicCharts.tsx    # Dynamic chart renderer (receives charts via webhook)
   /lib
     manifest.ts     # Manifest types and defaults
     config.ts       # App configuration
+    chartQueue.ts   # Chart message queue (separate from chat)
+    messageQueue.ts # Chat message queue
+  /types
+    chart.ts        # Chart type definitions
   page.tsx          # Main page (fetches manifest + renders widgets)
 MANIFEST.md         # Documentation for manifest system
+CHART_WEBHOOK.md    # Documentation for chart webhook system
 ```
 
 ## Environment Variables
@@ -54,7 +62,9 @@ LAMBDA_FUNCTION_URL=<lambda-url>            # AWS Lambda function URL
 CLAUDE_MODEL=claude-3-5-sonnet-20241022     # Claude model to use
 CHAT_FETCH_TIMEOUT_MS=30000                 # Overall timeout for Lambda requests
 CHAT_IDLE_TIMEOUT_MS=20000                  # Idle timeout for streaming
+NEXT_PUBLIC_WS_URL=<websocket-url>          # WebSocket URL for real-time updates
 WEBHOOK_SECRET=<secret>                     # Secret for webhook/manifest authentication
+CHART_WEBHOOK_SECRET=<secret>               # Optional: separate secret for chart webhooks (falls back to WEBHOOK_SECRET)
 ```
 
 ### Cloudflare KV Bindings (in wrangler.toml or dashboard)

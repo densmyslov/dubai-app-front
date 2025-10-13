@@ -4,6 +4,7 @@ import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { KVNamespace } from '@cloudflare/workers-types';
 import ChatWindow from './components/ChatWindow';
 import WidgetRenderer from './components/WidgetRenderer';
+import DynamicCharts from './components/DynamicCharts';
 import { DEFAULT_MANIFEST, type Manifest } from './lib/manifest';
 
 export const runtime = 'edge';
@@ -43,6 +44,9 @@ export default async function Page() {
           <WidgetRenderer key={widget.id} widget={widget} />
         ))}
       </div>
+
+      {/* Dynamic charts from backend */}
+      <DynamicCharts />
 
       {/* Debug info (optional - remove in production) */}
       <div className="text-xs text-slate-400 dark:text-slate-600 text-right">
