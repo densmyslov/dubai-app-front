@@ -55,8 +55,45 @@ export const DEFAULT_MANIFEST: Manifest = {
     {
       id: 'welcome',
       type: 'markdown',
-      title: 'Welcome',
-      content: '# Welcome to Dubai Real Estate Dashboard\n\nThis dashboard displays dynamic content. Use the chat to ask Claude to update the widgets.',
+      title: 'Welcome to Dubai Real Estate Dashboard',
+      content: `# 🏢 Dynamic Dashboard
+
+This dashboard displays **real-time analytics** powered by Claude AI.
+
+## Getting Started
+
+1. **Open the chat** (bottom right corner)
+2. **Ask Claude** to analyze Dubai real estate data
+3. **Watch the dashboard update** automatically
+
+### Example Questions
+
+- "Show me the top 5 communities by net yield"
+- "Create a chart of median rents over time"
+- "Compare price-to-rent ratios across property types"
+
+The dashboard will update instantly with charts, KPIs, and insights!`,
+      gridColumn: 'span 4',
+    },
+    {
+      id: 'placeholder-kpi-1',
+      type: 'kpi',
+      label: 'Awaiting Data',
+      value: '—',
+      suffix: '',
+    },
+    {
+      id: 'placeholder-kpi-2',
+      type: 'kpi',
+      label: 'Ask Claude',
+      value: '💬',
+      suffix: '',
+    },
+    {
+      id: 'placeholder-info',
+      type: 'markdown',
+      content: '## 📊 Charts Coming Soon\n\nAsk Claude to analyze your data and this area will fill with interactive visualizations.',
+      gridColumn: 'span 2',
     },
   ],
 };

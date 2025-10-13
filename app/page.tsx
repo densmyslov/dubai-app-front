@@ -1,34 +1,32 @@
 // app/page.tsx
 import React from 'react';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { KVNamespace } from '@cloudflare/workers-types';
 import ChatWindow from './components/ChatWindow';
 import WidgetRenderer from './components/WidgetRenderer';
-import type { Manifest } from './lib/manifest';
+import { DEFAULT_MANIFEST, type Manifest } from './lib/manifest';
 
 export const runtime = 'edge';
 
+const MANIFEST_KEY = 'dashboard:manifest';
+
 async function fetchManifest(): Promise<Manifest> {
   try {
-    const res = await fetch('/api/manifest', { cache: 'no-store' });
-    if (!res.ok) {
-      console.error('[page] Failed to fetch manifest:', res.status);
-      throw new Error('Failed to fetch manifest');
+    const env = getRequestContext().env as Record<string, unknown>;
+    const kv = env.MANIFEST_KV as KVNamespace | undefined;
+
+    if (!kv) {
+      console.warn('[page] MANIFEST_KV not available, using default manifest');
+      return DEFAULT_MANIFEST;
     }
-    return await res.json();
+
+    const stored = await kv.get(MANIFEST_KEY, 'text');
+    const manifest: Manifest = stored ? JSON.parse(stored) : DEFAULT_MANIFEST;
+
+    return manifest;
   } catch (error) {
     console.error('[page] Error fetching manifest:', error);
-    // Return default manifest on error
-    return {
-      version: '1.0.0',
-      updatedAt: new Date().toISOString(),
-      widgets: [
-        {
-          id: 'error',
-          type: 'markdown',
-          title: 'Error Loading Dashboard',
-          content: '# Unable to load dashboard\n\nPlease try refreshing the page or contact support.',
-        },
-      ],
-    };
+    return DEFAULT_MANIFEST;
   }
 }
 

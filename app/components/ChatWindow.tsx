@@ -37,7 +37,7 @@ export default function ChatWindow() {
   const [connectionStatus, setConnectionStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
-  const [sessionId, setSessionId] = useState<string>(() => {
+  const [sessionId] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem("chatSessionId");
       if (stored) return stored;
