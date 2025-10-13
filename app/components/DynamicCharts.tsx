@@ -220,9 +220,6 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
         textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
         ...(config.options?.tooltip || {}),
       },
-      legend: config.options?.legend !== false ? {
-        textStyle: { color: isDark ? "#94a3b8" : "#64748b" },
-      } : undefined,
       grid: {
         left: "3%",
         right: "4%",
@@ -230,8 +227,20 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
         containLabel: true,
         ...(config.options?.grid || {}),
       },
-      ...(config.options || {}),
     };
+
+    // Handle legend - show by default unless explicitly disabled
+    if (config.options?.legend !== false) {
+      option.legend = {
+        textStyle: { color: isDark ? "#94a3b8" : "#64748b" },
+      };
+    }
+
+    // Merge any additional options (but after legend handling)
+    if (config.options) {
+      const { legend, tooltip, grid, xAxis, yAxis, ...otherOptions } = config.options;
+      Object.assign(option, otherOptions);
+    }
 
     // Add xAxis for chart types that need it
     if (["line", "bar", "area"].includes(config.chartType)) {
@@ -251,11 +260,11 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
       };
     }
 
-    // Map series
+    // Map series with proper typing
     option.series = config.series.map((s) => ({
       name: s.name,
-      type: s.type || config.chartType,
-      data: s.data,
+      type: (s.type || config.chartType) as any,
+      data: s.data as any,
     }));
 
     chart.setOption(option);
