@@ -135,23 +135,32 @@ export default function ChatWindow() {
     const connect = () => {
       if (!isActive) return;
       sourceRef.current?.close();
-      const es = new EventSource(`/api/webhook/stream?sessionId=${encodeURIComponent(sessionId)}`);
+      const streamUrl = `/api/webhook/stream?sessionId=${encodeURIComponent(sessionId)}`;
+      console.log("[ChatWindow] Connecting to SSE stream:", streamUrl);
+      const es = new EventSource(streamUrl);
       sourceRef.current = es;
 
       es.onopen = () => {
+        console.log("[ChatWindow] SSE connection opened");
         attemptRef.current = 0;
         setConnectionStatus("connected");
       };
 
       es.onmessage = (event) => {
         try {
+          console.log("[ChatWindow] SSE message received:", event.data);
           const payload = JSON.parse(event.data);
+          console.log("[ChatWindow] Parsed payload:", payload);
 
           // Ignore keepalives
-          if (payload?.type === "connected" || payload?.type === "ping") return;
+          if (payload?.type === "connected" || payload?.type === "ping") {
+            console.log("[ChatWindow] Ignoring keepalive:", payload.type);
+            return;
+          }
 
           // Streaming chunks: append delta to the current assistant bubble
           if (payload?.type === "chunk") {
+            console.log("[ChatWindow] Processing chunk:", payload);
             const delta: string =
               typeof payload.delta === "string"
                 ? payload.delta
@@ -160,36 +169,44 @@ export default function ChatWindow() {
                 : typeof payload.message === "string"
                 ? payload.message
                 : "";
-            if (delta) appendToAssistant(delta);
+            if (delta) {
+              console.log("[ChatWindow] Appending delta:", delta);
+              appendToAssistant(delta);
+            }
             return;
           }
 
           // Stream finished
           if (payload?.type === "done") {
+            console.log("[ChatWindow] Stream done");
             return; // bubble already contains final text
           }
 
           // Non-stream, full message from webhook
           if (payload?.type === "webhook_message") {
+            console.log("[ChatWindow] Processing webhook_message:", payload);
             const content: string =
               typeof payload.content === "string"
                 ? payload.content
                 : typeof payload.message === "string"
                 ? payload.message
                 : JSON.stringify(payload);
+            console.log("[ChatWindow] Pushing assistant message:", content);
             pushAssistantMessage(content);
             return;
           }
 
           // Fallbacks: accept plain strings or common fields
+          console.log("[ChatWindow] Using fallback handler for payload:", payload);
           const maybeText: string =
             typeof payload === "string"
               ? payload
               : payload?.text ?? payload?.message ?? JSON.stringify(payload);
 
+          console.log("[ChatWindow] Fallback text:", maybeText);
           pushAssistantMessage(String(maybeText));
         } catch (err) {
-          console.error("Failed to parse SSE message", err);
+          console.error("[ChatWindow] Failed to parse SSE message", err, "raw data:", event.data);
           pushAssistantMessage(event.data);
         }
       };
