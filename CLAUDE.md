@@ -1,31 +1,44 @@
 # Dubai Real Estate Dashboard - Development Instructions
 
 ## Project Overview
-This is a Next.js 14 application that displays Dubai real estate investment analytics with interactive charts, KPIs, and an integrated Claude AI chat assistant.
+This is a Next.js 14 application that displays Dubai real estate investment analytics with **dynamic, runtime-configurable widgets**. The dashboard content is controlled by a manifest that can be updated by Claude AI without requiring a rebuild or redeploy.
 
 ## Tech Stack
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 14 (App Router, Edge Runtime)
 - **Styling**: Tailwind CSS with dark mode support
 - **Charts**: ECharts
 - **AI Chat**: Claude API via AWS Lambda
-- **Deployment**: Cloudflare Pages + Cloudflare Workers
+- **Storage**: Cloudflare KV (for manifest + webhook messages)
+- **Deployment**: Cloudflare Pages
 
 ## Key Features
-1. Real estate analytics dashboard with interactive charts
-2. Community league table with investor metrics
-3. Claude AI chat integration
-4. Dark/light theme toggle
-5. Server-side rendering with edge caching
+1. **Dynamic manifest-driven dashboard** - No build/deploy needed for content updates
+2. Real-time Claude AI chat with SSE streaming
+3. Webhook system for external message delivery
+4. Interactive charts (line, bar), KPIs, markdown, and tables
+5. Dark/light theme toggle
+6. Edge-rendered with no-store caching for instant updates
 
 ## Project Structure
 ```
 /app
-  /api/chat         # Chat API route (proxies to Lambda)
-  /components       # React components
-  /lib              # Utilities and config
-  /page.tsx         # Main dashboard page
-/public/data        # Sample JSON data
-/worker             # Cloudflare Worker for API caching
+  /api
+    /chat           # Chat API route (proxies to Lambda)
+    /manifest       # GET/POST manifest (dashboard content)
+    /webhook        # POST endpoint for external messages
+    /webhook/stream # SSE stream for real-time messages
+  /components
+    WidgetRenderer.tsx   # Dynamic widget renderer
+    KPICard.tsx          # KPI widget
+    ChartCard.tsx        # Chart widget (ECharts)
+    MarkdownWidget.tsx   # Markdown content widget
+    TableWidget.tsx      # Table widget
+    ChatWindow.tsx       # Chat interface
+  /lib
+    manifest.ts     # Manifest types and defaults
+    config.ts       # App configuration
+  page.tsx          # Main page (fetches manifest + renders widgets)
+MANIFEST.md         # Documentation for manifest system
 ```
 
 ## Environment Variables
@@ -34,14 +47,25 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
 ```
 KEY=<your-api-key>                          # API key for Lambda authentication
 LAMBDA_FUNCTION_URL=<lambda-url>            # AWS Lambda function URL
-CLAUDE_MODEL=claude-3-5-sonnet-20241022     # Claude model to use (optional)
-NEXT_PUBLIC_API_BASE=<worker-url>           # Cloudflare Worker URL (optional)
 ```
 
 ### Optional
 ```
-CHAT_FETCH_TIMEOUT_MS=30000    # Overall timeout for Lambda requests
-CHAT_IDLE_TIMEOUT_MS=20000     # Idle timeout for streaming
+CLAUDE_MODEL=claude-3-5-sonnet-20241022     # Claude model to use
+CHAT_FETCH_TIMEOUT_MS=30000                 # Overall timeout for Lambda requests
+CHAT_IDLE_TIMEOUT_MS=20000                  # Idle timeout for streaming
+WEBHOOK_SECRET=<secret>                     # Secret for webhook/manifest authentication
+```
+
+### Cloudflare KV Bindings (in wrangler.toml or dashboard)
+```toml
+[[kv_namespaces]]
+binding = "MANIFEST_KV"      # For storing dashboard manifest
+id = "your-manifest-kv-id"
+
+[[kv_namespaces]]
+binding = "WEBHOOK_KV"       # For storing webhook message history
+id = "your-webhook-kv-id"
 ```
 
 ## Development Commands
@@ -65,10 +89,22 @@ npm run lint
 
 ## Architecture
 
+### Dynamic Manifest System
+
+The dashboard is **fully dynamic** and requires no rebuild to update:
+
+1. **Page Load**: [page.tsx](app/page.tsx) fetches `/api/manifest` with `cache: 'no-store'`
+2. **Manifest Retrieval**: [/api/manifest](app/api/manifest/route.ts) reads from Cloudflare KV (or returns default)
+3. **Widget Rendering**: [WidgetRenderer](app/components/WidgetRenderer.tsx) dynamically renders each widget
+4. **LLM Updates**: Lambda/Claude POSTs new manifest to `/api/manifest` to update dashboard
+5. **Instant Update**: Next page load shows new content (no build, no deploy)
+
+See [MANIFEST.md](MANIFEST.md) for detailed manifest schema and LLM integration guide.
+
 ### Chat Flow
 1. User sends message from ChatWindow component
 2. Request goes to `/api/chat` route
-3. Route forwards to AWS Lambda with authentication
+3. Route forwards to AWS Lambda with authentication (includes `sessionId` and `chatUrl`)
 4. Lambda calls Claude API and returns SSE stream
 5. Route parses Lambda response and streams to client
 6. ChatWindow displays streaming response
@@ -85,6 +121,18 @@ Lambda returns:
 
 The chat route parses this and streams SSE events to the client.
 
+### Webhook System
+
+The app includes a **real-time webhook system** for delivering messages from external sources (e.g., Lambda) directly to connected chat clients:
+
+1. **POST to `/api/webhook`**: External services send messages with `{message: "...", sessionId: "..."}`
+2. **Message Queue**: Messages are added to an in-memory queue and persisted to WEBHOOK_KV
+3. **SSE Stream `/api/webhook/stream`**: Connected clients receive messages in real-time
+4. **Session Targeting**: Messages with a `sessionId` are delivered only to matching chat sessions
+5. **ChatWindow Integration**: The chat automatically subscribes to the webhook stream when open
+
+**Use Case**: Lambda can post analysis results, notifications, or updates directly to the chat without waiting for the user to send another message.
+
 ### Dark Mode
 - Uses Tailwind's `dark:` classes
 - Theme state managed by ThemeProvider context
@@ -94,36 +142,46 @@ The chat route parses this and streams SSE events to the client.
 
 ## Key Components
 
+### WidgetRenderer.tsx
+- Dynamically renders widgets based on manifest type
+- Supports: KPI, Chart, Markdown, Table
+- Handles grid layout via `gridColumn` property
+
 ### ChatWindow.tsx
 - Client-side chat interface
-- Handles SSE streaming from `/api/chat`
-- Expects events in format: `{type: 'chunk', text: '...'}`
+- Handles SSE streaming from `/api/chat` (for user messages)
+- Subscribes to `/api/webhook/stream` (for external notifications)
+- Manages session ID persistence
 
-### ChartCard.tsx
-- ECharts wrapper component
-- Observes DOM for dark mode changes
-- Dynamically updates chart colors
+### Widget Components
+- **KPICard.tsx**: Simple label/value display
+- **ChartCard.tsx**: ECharts wrapper with dark mode support
+- **MarkdownWidget.tsx**: Renders markdown content
+- **TableWidget.tsx**: Tabular data display
 
-### ThemeProvider.tsx & ThemeToggle.tsx
-- Context-based theme management
-- Handles SSR hydration properly
-- Persists theme preference
+### /api/manifest/route.ts
+- **GET**: Returns current manifest from MANIFEST_KV
+- **POST**: Updates manifest (requires WEBHOOK_SECRET if set)
+- Uses `cache: 'no-store'` for instant updates
 
 ### /api/chat/route.ts
 - Proxies chat requests to Lambda
-- Handles Lambda's wrapped SSE response format
-- Adds authentication from environment variables
-- Implements request timeouts
+- Injects `sessionId` and `chatUrl` metadata
+- Streams SSE responses to client
+
+### /api/webhook/route.ts & /api/webhook/stream/route.ts
+- **POST /api/webhook**: Receives messages from Lambda
+- **GET /api/webhook/stream**: SSE stream for real-time message delivery
+- Session-based routing for targeted messages
 
 ## Data Flow
 
-### Dashboard Data
-1. Server fetches from Cloudflare Worker API (if `NEXT_PUBLIC_API_BASE` set)
-2. Falls back to local `/public/data/*.json` files
-3. Data includes:
-   - League table (net yield, price-to-rent, etc.)
-   - Rent per m² time series
-   - Price-to-rent time series
+### Dashboard Rendering (New Architecture)
+1. **Page load**: [page.tsx](app/page.tsx) calls `fetch('/api/manifest', { cache: 'no-store' })`
+2. **Manifest API**: Reads manifest from MANIFEST_KV (or returns default)
+3. **Widget rendering**: WidgetRenderer dynamically creates widgets
+4. **Edge-rendered**: Runs on Cloudflare Edge, no server needed
+5. **Instant updates**: Refresh page to see new manifest (no rebuild)
 
 ## Important Notes
 

@@ -39,7 +39,14 @@ export async function GET(request: NextRequest) {
 
 			// Deliver new messages as they arrive
 			const unsubscribe = messageQueue.subscribe((message) => {
+				console.log('[webhook/stream] Message received:', {
+					messageSessionId: message.sessionId,
+					streamSessionId: sessionId,
+					willDeliver: !(sessionId && message.sessionId && message.sessionId !== sessionId)
+				});
+
 				if (sessionId && message.sessionId && message.sessionId !== sessionId) {
+					console.log('[webhook/stream] Filtering out message due to sessionId mismatch');
 					return;
 				}
 
@@ -52,6 +59,7 @@ export async function GET(request: NextRequest) {
 					timestamp: message.timestamp,
 				};
 
+				console.log('[webhook/stream] Delivering message to client:', payload.id);
 				controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 			});
 
