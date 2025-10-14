@@ -60,22 +60,28 @@ export async function GET(request: NextRequest) {
 				controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 			}
 
-			// Also check in-memory queue for recent charts (in case KV is not available)
-			const localHistory = chartQueue.getRecentMessages(20, sessionId);
-			const kvChartIds = new Set(recentFromKV.map(m => m.chartId));
-			for (const message of localHistory) {
-				if (!kvChartIds.has(message.chartId)) {
-					const payload = {
-						type: message.type,
-						chartId: message.chartId,
-						config: message.config,
-						timestamp: message.timestamp,
-						isHistory: true,
-					};
+			// Also check in-memory queue for recent charts (only if KV is not available)
+			// Skip in-memory fallback when KV exists to ensure proper session isolation
+			if (!kv) {
+				console.log('[charts/stream] KV not available, checking in-memory queue');
+				const localHistory = chartQueue.getRecentMessages(20, sessionId);
+				const kvChartIds = new Set(recentFromKV.map(m => m.chartId));
+				for (const message of localHistory) {
+					if (!kvChartIds.has(message.chartId)) {
+						const payload = {
+							type: message.type,
+							chartId: message.chartId,
+							config: message.config,
+							timestamp: message.timestamp,
+							isHistory: true,
+						};
 
-					console.log('[charts/stream] Delivering chart from memory:', message.chartId);
-					controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+						console.log('[charts/stream] Delivering chart from memory:', message.chartId, 'sessionId:', message.sessionId);
+						controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+					}
 				}
+			} else {
+				console.log('[charts/stream] KV available, skipping in-memory queue to ensure session isolation');
 			}
 
 			// Subscribe to new chart messages
