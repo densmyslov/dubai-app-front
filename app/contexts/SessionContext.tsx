@@ -1,8 +1,9 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 interface SessionContextType {
   sessionId: string;
+  resetSession: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -15,7 +16,7 @@ function createSessionId(): string {
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const [sessionId] = useState<string>(() => {
+  const [sessionId, setSessionId] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem("chatSessionId");
       if (stored) return stored;
@@ -28,8 +29,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem("chatSessionId", sessionId);
   }, [sessionId]);
 
+  const resetSession = useCallback(() => {
+    setSessionId(createSessionId());
+  }, [setSessionId]);
+
   return (
-    <SessionContext.Provider value={{ sessionId }}>
+    <SessionContext.Provider value={{ sessionId, resetSession }}>
       {children}
     </SessionContext.Provider>
   );

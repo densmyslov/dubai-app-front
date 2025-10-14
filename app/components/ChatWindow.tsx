@@ -1,7 +1,7 @@
 // app/components/ChatWindow.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { FormEvent } from "react";
 import { useSession } from "../contexts/SessionContext";
 
@@ -23,7 +23,7 @@ export default function ChatWindow() {
   // State
   // --------------------------------------------------------------------------
 
-  const { sessionId } = useSession();
+  const { sessionId, resetSession } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -217,12 +217,6 @@ export default function ChatWindow() {
   }, [isOpen, sessionId]);
 
   // --------------------------------------------------------------------------
-  // Early Returns
-  // --------------------------------------------------------------------------
-
-  if (!mounted) return null;
-
-  // --------------------------------------------------------------------------
   // Handlers
   // --------------------------------------------------------------------------
 
@@ -381,6 +375,25 @@ export default function ChatWindow() {
     }
   };
 
+  const handleClear = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
+    setMessages([]);
+    setInput("");
+    setConnectionStatus("disconnected");
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    sourceRef.current?.close();
+    sourceRef.current = null;
+    attemptRef.current = 0;
+    resetSession();
+  }, [resetSession]);
+
+  if (!mounted) return null;
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void sendMessage();
@@ -464,7 +477,7 @@ export default function ChatWindow() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setMessages([])}
+            onClick={handleClear}
             className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
             aria-label="Clear chat history"
             title="Clear chat history"
