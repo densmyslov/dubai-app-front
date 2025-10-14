@@ -19,3 +19,7 @@ queue = "dubai-app-queue"
 name = "SESSIONS"
 class_name = "SessionHub"
 script_name = "session-hub"   # ✅ matches the Worker you deployed
+
+[[kv_namespaces]]
+binding = "MANIFEST_KV"
+id = "3bd9bcdc58f442068119d68264b14691"
