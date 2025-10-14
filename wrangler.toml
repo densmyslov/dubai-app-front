@@ -7,6 +7,10 @@ compatibility_flags = ["nodejs_compat"]
 binding = "WEBHOOK_KV"
 id = "2d0ed139149e47e0a6fce80719d2d44f"
 
+[[kv_namespaces]]
+binding = "CHART_KV"
+id = "PLACEHOLDER_CHART_KV_ID"  # Replace with actual KV namespace ID
+
 [[queues.producers]]
 binding = "MESSAGE_QUEUE"
 queue = "dubai-app-queue"

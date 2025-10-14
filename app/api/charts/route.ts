@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { chartQueue, type ChartConfig } from '../../lib/chartQueue';
+import { appendChartToKV } from '../../lib/chartStorage';
 
 export const runtime = 'edge';
 
@@ -202,6 +205,20 @@ export async function POST(request: NextRequest) {
 						},
 					}
 				);
+		}
+
+		// Persist to KV storage for Cloudflare edge runtime
+		const env = getRequestContext().env as Record<string, unknown>;
+		const kv = env.CHART_KV as KVNamespace | undefined;
+		if (kv) {
+			try {
+				await appendChartToKV(kv, chartMessage);
+				console.log('[charts/route] Chart persisted to KV:', chartMessage.chartId);
+			} catch (kvError) {
+				console.error('[charts/route] Failed to persist chart to KV:', kvError);
+			}
+		} else {
+			console.warn('[charts/route] CHART_KV not available, chart will only exist in memory');
 		}
 
 		return NextResponse.json(

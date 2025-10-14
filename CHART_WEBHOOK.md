@@ -6,15 +6,21 @@ The chart webhook system provides a separate channel for dynamically injecting c
 
 ## Quick Setup
 
-1. **Set environment variable** (optional but recommended for security):
+1. **Create Cloudflare KV namespace** (required for production):
+   ```bash
+   npx wrangler kv namespace create CHART_KV
+   ```
+   Then update `wrangler.toml` with the ID. See [CHART_KV_SETUP.md](CHART_KV_SETUP.md) for detailed instructions.
+
+2. **Set environment variable** (optional but recommended for security):
    ```bash
    # In .env.local
    CHART_WEBHOOK_SECRET=your-secret-here
    ```
 
-2. **Deploy your app** - The chart webhook is already integrated in the main page
+3. **Deploy your app** - The chart webhook is already integrated in the main page
 
-3. **Send charts from your backend**:
+4. **Send charts from your backend**:
    ```bash
    curl -X POST https://your-app.com/api/charts \
      -H "Content-Type: application/json" \

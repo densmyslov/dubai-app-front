@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { chartQueue, type ChartMessage } from '../../../lib/chartQueue';
+import { getRecentChartsFromKV } from '../../../lib/chartStorage';
 
 export const runtime = 'edge';
 
@@ -17,6 +20,12 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
 	const sessionId = request.nextUrl.searchParams.get('sessionId') || undefined;
+	const env = getRequestContext().env as Record<string, unknown>;
+	const kv = env.CHART_KV as KVNamespace | undefined;
+
+	// Load recent charts from KV storage (fallback to in-memory queue)
+	const recentFromKV = kv ? await getRecentChartsFromKV(kv, 20, sessionId) : [];
+	console.log('[charts/stream] Loaded from KV:', recentFromKV.length, 'charts');
 
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
@@ -29,9 +38,8 @@ export async function GET(request: NextRequest) {
 				)
 			);
 
-			// Deliver recent chart messages as history
-			const history = chartQueue.getRecentMessages(20, sessionId);
-			for (const message of history) {
+			// Deliver charts from KV as history
+			for (const message of recentFromKV) {
 				const payload = {
 					type: message.type,
 					chartId: message.chartId,
@@ -40,7 +48,26 @@ export async function GET(request: NextRequest) {
 					isHistory: true,
 				};
 
+				console.log('[charts/stream] Delivering chart from KV:', message.chartId);
 				controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+			}
+
+			// Also check in-memory queue for recent charts (in case KV is not available)
+			const localHistory = chartQueue.getRecentMessages(20, sessionId);
+			const kvChartIds = new Set(recentFromKV.map(m => m.chartId));
+			for (const message of localHistory) {
+				if (!kvChartIds.has(message.chartId)) {
+					const payload = {
+						type: message.type,
+						chartId: message.chartId,
+						config: message.config,
+						timestamp: message.timestamp,
+						isHistory: true,
+					};
+
+					console.log('[charts/stream] Delivering chart from memory:', message.chartId);
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+				}
 			}
 
 			// Subscribe to new chart messages
