@@ -23,9 +23,17 @@ export async function GET(request: NextRequest) {
 	const env = getRequestContext().env as Record<string, unknown>;
 	const kv = env.CHART_KV as KVNamespace | undefined;
 
+	console.log('[charts/stream] Connection request with sessionId:', sessionId);
+	console.log('[charts/stream] CHART_KV available:', !!kv);
+
 	// Load recent charts from KV storage (fallback to in-memory queue)
 	const recentFromKV = kv ? await getRecentChartsFromKV(kv, 20, sessionId) : [];
-	console.log('[charts/stream] Loaded from KV:', recentFromKV.length, 'charts');
+	console.log('[charts/stream] Loaded from KV:', recentFromKV.length, 'charts for sessionId:', sessionId);
+	console.log('[charts/stream] Chart details from KV:', recentFromKV.map(m => ({
+		chartId: m.chartId,
+		sessionId: m.sessionId,
+		type: m.type
+	})));
 
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {

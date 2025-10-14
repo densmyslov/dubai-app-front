@@ -1,5 +1,7 @@
 # Dubai Real Estate Dashboard - Development Instructions
 
+> **📁 Documentation Location:** All detailed documentation has been moved to the `/documentation` folder. See [documentation/INDEX.md](documentation/INDEX.md) for a complete list of available docs.
+
 ## Project Overview
 This is a Next.js 14 application that displays Dubai real estate investment analytics with **dynamic, runtime-configurable widgets**. The dashboard content is controlled by a manifest that can be updated by Claude AI without requiring a rebuild or redeploy.
 
@@ -53,8 +55,14 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
     chart.ts        # Chart type definitions
   layout.tsx        # Root layout (wraps app with SessionProvider & ThemeProvider)
   page.tsx          # Main page (renders ManifestProvider & DynamicCharts)
-MANIFEST.md         # Documentation for manifest system
-CHART_WEBHOOK.md    # Documentation for chart webhook system
+/documentation      # All project documentation (except CLAUDE.md)
+  INDEX.md              # Complete documentation index and navigation
+  MANIFEST.md           # Documentation for manifest system
+  CHART_WEBHOOK.md      # Documentation for chart webhook system
+  CHART_KV_SETUP.md     # Guide for setting up Cloudflare KV for charts
+  MIGRATION_SUMMARY.md  # Summary of recent architectural changes
+  README.md             # Deployment and quick start guide
+CLAUDE.md           # Project instructions for Claude Code (this file)
 ```
 
 ## Environment Variables
@@ -344,7 +352,18 @@ Brief description of changes
 
 **Note**: Do NOT add authorship info, "Generated with Claude Code", or "Co-Authored-By" lines to commit messages.
 
-## Resources
+## Additional Documentation
+
+All detailed documentation has been organized in the `/documentation` folder:
+
+- **[documentation/INDEX.md](documentation/INDEX.md)** - Complete documentation index
+- **[documentation/MANIFEST.md](documentation/MANIFEST.md)** - Manifest system schema and usage
+- **[documentation/CHART_WEBHOOK.md](documentation/CHART_WEBHOOK.md)** - Chart webhook API reference
+- **[documentation/CHART_KV_SETUP.md](documentation/CHART_KV_SETUP.md)** - Cloudflare KV setup guide
+- **[documentation/MIGRATION_SUMMARY.md](documentation/MIGRATION_SUMMARY.md)** - Recent architectural changes
+- **[documentation/README.md](documentation/README.md)** - Deployment and quick start guide
+
+## External Resources
 - [Next.js Docs](https://nextjs.org/docs)
 - [Tailwind CSS Docs](https://tailwindcss.com/docs)
 - [ECharts Documentation](https://echarts.apache.org/en/index.html)

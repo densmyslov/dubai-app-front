@@ -25,20 +25,31 @@ export async function appendChartToKV(
 	message: ChartMessage
 ): Promise<void> {
 	const storageKey = getStorageKey(message.sessionId);
+	console.log('[chartStorage] Storing chart with sessionId:', message.sessionId, 'in KV key:', storageKey);
+
 	let messages = await kv.get<StoredCharts>(storageKey, { type: 'json' });
 
 	if (!messages) {
 		messages = [];
+		console.log('[chartStorage] Creating new storage array for key:', storageKey);
+	} else {
+		console.log('[chartStorage] Existing storage has', messages.length, 'charts');
 	}
 
 	// If this is a remove action, filter out the chart
 	if (message.type === 'chart_remove') {
 		messages = messages.filter((m) => m.chartId !== message.chartId);
+		console.log('[chartStorage] Removed chart:', message.chartId);
 	} else {
 		// For add/update, remove any existing chart with same ID first
+		const existingCount = messages.length;
 		messages = messages.filter((m) => m.chartId !== message.chartId);
+		if (messages.length < existingCount) {
+			console.log('[chartStorage] Replaced existing chart:', message.chartId);
+		}
 		// Then add the new/updated chart
 		messages.push(message);
+		console.log('[chartStorage] Added chart:', message.chartId, 'Total charts:', messages.length);
 	}
 
 	if (messages.length > MAX_STORED_MESSAGES) {
@@ -49,6 +60,7 @@ export async function appendChartToKV(
 	await kv.put(storageKey, JSON.stringify(messages), {
 		expirationTtl: 86400, // 24 hours
 	});
+	console.log('[chartStorage] Saved to KV key:', storageKey);
 }
 
 /**
@@ -61,7 +73,14 @@ export async function getRecentChartsFromKV(
 	sessionId?: string
 ): Promise<ChartMessage[]> {
 	const storageKey = getStorageKey(sessionId);
+	console.log('[chartStorage] Reading from KV key:', storageKey, 'for sessionId:', sessionId);
+
 	const messages = (await kv.get<StoredCharts>(storageKey, { type: 'json' })) ?? [];
+	console.log('[chartStorage] Found', messages.length, 'messages in KV');
+
+	if (messages.length > 0) {
+		console.log('[chartStorage] Message sessionIds:', messages.map(m => m.sessionId));
+	}
 
 	if (messages.length <= limit) {
 		return messages;
