@@ -87,6 +87,8 @@ const DynamicCharts: React.FC<DynamicChartsProps> = ({ sessionId }) => {
               config,
               timestamp: payload.timestamp || Date.now(),
             });
+            console.log("[DynamicCharts] Charts state updated. Total charts:", updated.size);
+            console.log("[DynamicCharts] Chart IDs:", Array.from(updated.keys()));
             return updated;
           });
         } else if (payload?.type === "chart_remove") {
@@ -126,9 +128,14 @@ const DynamicCharts: React.FC<DynamicChartsProps> = ({ sessionId }) => {
 
   const chartArray = Array.from(charts.values());
 
+  console.log("[DynamicCharts] Render - mounted:", mounted, "charts:", chartArray.length);
+
   if (chartArray.length === 0) {
+    console.log("[DynamicCharts] No charts to display, returning null");
     return null; // Don't render anything if no charts
   }
+
+  console.log("[DynamicCharts] Rendering", chartArray.length, "charts");
 
   return (
     <div className="space-y-6">
