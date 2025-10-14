@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { FormEvent } from "react";
+import { useSession } from "../contexts/SessionContext";
 
 // ============================================================================
 // Types
@@ -22,13 +23,7 @@ export default function ChatWindow() {
   // State
   // --------------------------------------------------------------------------
 
-  const createSessionId = () => {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID();
-    }
-    return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  };
-
+  const { sessionId } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -37,18 +32,6 @@ export default function ChatWindow() {
   const [connectionStatus, setConnectionStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
-  const [sessionId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem("chatSessionId");
-      if (stored) return stored;
-    }
-    return createSessionId();
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("chatSessionId", sessionId);
-  }, [sessionId]);
 
   // --------------------------------------------------------------------------
   // Refs

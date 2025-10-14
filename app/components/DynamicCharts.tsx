@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
+import { useSession } from "../contexts/SessionContext";
 import type { ChartConfig } from "../lib/chartQueue";
 
 // ============================================================================
@@ -10,13 +11,9 @@ import type { ChartConfig } from "../lib/chartQueue";
 // the backend. Charts are displayed in a grid layout and can be added,
 // updated, or removed in real-time without cluttering the chat interface.
 //
-// Usage:
-//   <DynamicCharts sessionId="optional-session-id" />
+// The component automatically uses the session ID from SessionContext to ensure
+// that charts are isolated per user session.
 // ============================================================================
-
-interface DynamicChartsProps {
-  sessionId?: string;
-}
 
 interface ChartState {
   chartId: string;
@@ -24,7 +21,8 @@ interface ChartState {
   timestamp: number;
 }
 
-const DynamicCharts: React.FC<DynamicChartsProps> = ({ sessionId }) => {
+const DynamicCharts: React.FC = () => {
+  const { sessionId } = useSession();
   const [charts, setCharts] = useState<Map<string, ChartState>>(new Map());
   const [connectionStatus, setConnectionStatus] = useState<
     "disconnected" | "connecting" | "connected"

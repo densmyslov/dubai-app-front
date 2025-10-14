@@ -39,16 +39,20 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
     TableWidget.tsx      # Table widget
     ChatWindow.tsx       # Chat interface
     DynamicCharts.tsx    # Dynamic chart renderer (receives charts via webhook)
+  /contexts
+    SessionContext.tsx   # Shared session ID context (used by ChatWindow & DynamicCharts)
   /hooks
     useManifest.ts  # Hook for polling manifest updates (5s interval)
   /lib
     manifest.ts     # Manifest types and defaults
     config.ts       # App configuration
     chartQueue.ts   # Chart message queue (separate from chat)
+    chartStorage.ts # Session-based KV storage for charts
     messageQueue.ts # Chat message queue
   /types
     chart.ts        # Chart type definitions
-  page.tsx          # Main page (renders ManifestProvider)
+  layout.tsx        # Root layout (wraps app with SessionProvider & ThemeProvider)
+  page.tsx          # Main page (renders ManifestProvider & DynamicCharts)
 MANIFEST.md         # Documentation for manifest system
 CHART_WEBHOOK.md    # Documentation for chart webhook system
 ```
@@ -153,6 +157,34 @@ The app includes a **real-time webhook system** for delivering messages from ext
 
 **Use Case**: Lambda can post analysis results, notifications, or updates directly to the chat without waiting for the user to send another message.
 
+### Session-Based Chart Isolation
+
+Charts are now **isolated per user session** to prevent conflicts between multiple users:
+
+1. **SessionContext**: Provides a shared `sessionId` across all components
+   - Created once per browser session
+   - Persisted in localStorage
+   - Shared between ChatWindow and DynamicCharts
+
+2. **KV Storage**: Charts stored with session-specific keys
+   - Key pattern: `charts:session:{sessionId}` (instead of global `charts:messages`)
+   - Each session has its own chart collection
+   - Automatic TTL: 24 hours (auto-cleanup)
+
+3. **Chart Webhook**: Requires `sessionId` in POST body
+   - Backend must include `sessionId` when posting charts
+   - Charts without sessionId go to global key (backward compatibility)
+
+4. **Streaming**: Chart SSE stream filters by `sessionId`
+   - `/api/charts/stream?sessionId={id}` returns only that session's charts
+   - History loaded from session-specific KV key
+
+**Benefits**:
+- ✅ Multiple users can have different charts simultaneously
+- ✅ No chart ID conflicts between users
+- ✅ Automatic cleanup after 24 hours
+- ✅ Backward compatible with global charts
+
 ### Dark Mode
 - Uses Tailwind's `dark:` classes
 - Theme state managed by ThemeProvider context
@@ -171,7 +203,19 @@ The app includes a **real-time webhook system** for delivering messages from ext
 - Client-side chat interface
 - Handles SSE streaming from `/api/chat` (for user messages)
 - Subscribes to `/api/webhook/stream` (for external notifications)
-- Manages session ID persistence
+- Uses shared sessionId from SessionContext
+
+### DynamicCharts.tsx
+- Renders charts sent via `/api/charts` webhook
+- Uses shared sessionId from SessionContext
+- Subscribes to `/api/charts/stream?sessionId={id}` for real-time updates
+- Charts isolated per session (no conflicts between users)
+
+### SessionContext.tsx
+- Provides shared `sessionId` across all components
+- Creates unique session ID on first load
+- Persists sessionId in localStorage
+- Used by ChatWindow and DynamicCharts
 
 ### Widget Components
 - **KPICard.tsx**: Simple label/value display
