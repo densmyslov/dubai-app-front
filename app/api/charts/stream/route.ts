@@ -72,19 +72,19 @@ export async function GET(request: NextRequest) {
 
 			// Subscribe to new chart messages
 			const unsubscribe = chartQueue.subscribe((message: ChartMessage) => {
+				// Strict session filtering: only deliver if sessionId matches exactly
+				const shouldDeliver = sessionId
+					? message.sessionId === sessionId
+					: !message.sessionId; // If no sessionId in stream, only show global charts
+
 				console.log('[charts/stream] Message received:', {
 					chartId: message.chartId,
 					messageSessionId: message.sessionId,
 					streamSessionId: sessionId,
-					willDeliver: !(
-						sessionId &&
-						message.sessionId &&
-						message.sessionId !== sessionId
-					),
+					shouldDeliver,
 				});
 
-				// Filter by session if specified
-				if (sessionId && message.sessionId && message.sessionId !== sessionId) {
+				if (!shouldDeliver) {
 					console.log(
 						'[charts/stream] Filtering out message due to sessionId mismatch'
 					);

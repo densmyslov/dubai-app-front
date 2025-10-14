@@ -107,8 +107,15 @@ class ChartQueue {
     let messages = [...this.messages];
 
     if (sessionId) {
+      // Only return messages that exactly match the sessionId
+      // Do NOT return messages with no sessionId (those go to global storage)
       messages = messages.filter(
-        (message) => !message.sessionId || message.sessionId === sessionId
+        (message) => message.sessionId === sessionId
+      );
+    } else {
+      // If no sessionId specified, only return messages without sessionId (global)
+      messages = messages.filter(
+        (message) => !message.sessionId
       );
     }
 
