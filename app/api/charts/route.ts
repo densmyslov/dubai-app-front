@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
 			action?: unknown;
 			chartId?: unknown;
 			sessionId?: unknown;
+			session_id?: unknown; // Accept snake_case from backend
 			config?: unknown;
 		};
 		try {
@@ -98,7 +99,17 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		const { action, chartId, sessionId, config } = body;
+		// Accept both sessionId (camelCase) and session_id (snake_case)
+		const { action, chartId, config } = body;
+		const sessionId = body.sessionId || body.session_id;
+
+		console.log('[charts/route] Received request:', {
+			action,
+			chartId,
+			sessionId,
+			hasSessionId: !!body.sessionId,
+			hasSession_id: !!body.session_id,
+		});
 
 		// Validate action
 		if (

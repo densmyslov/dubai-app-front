@@ -163,7 +163,8 @@ X-Webhook-Secret: <your-secret> (optional)
 
 - `action` (required): One of `"add"`, `"update"`, or `"remove"`
 - `chartId` (required): Unique identifier for the chart
-- `sessionId` (optional): Session ID for filtering (only deliver to specific user)
+- `sessionId` or `session_id` (optional): Session ID for filtering (only deliver to specific user)
+  - **Note**: Both camelCase (`sessionId`) and snake_case (`session_id`) are accepted for backend compatibility
 - `config` (required for add/update): Chart configuration object
 
 #### Chart Configuration
