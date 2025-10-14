@@ -198,10 +198,15 @@ interface DynamicChartProps {
   config: ChartConfig;
 }
 
-const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
+const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [isDark, setIsDark] = useState(false);
+
+  // Debug: Log when component renders
+  useEffect(() => {
+    console.log('[DynamicChart] Component rendered/updated for chartId:', chartId);
+  });
 
   // Detect dark mode
   useEffect(() => {
@@ -312,6 +317,14 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
       style={{ height: 360 }}
     />
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if config actually changed
+  return (
+    prevProps.chartId === nextProps.chartId &&
+    JSON.stringify(prevProps.config) === JSON.stringify(nextProps.config)
+  );
+});
+
+DynamicChart.displayName = 'DynamicChart';
 
 export default DynamicCharts;
