@@ -178,10 +178,21 @@ export async function POST(request: NextRequest) {
 			}
 		}
 
-		const resolvedSessionId =
-			typeof sessionId === 'string' && sessionId.trim().length > 0
-				? sessionId
-				: undefined;
+		if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+			return NextResponse.json(
+				{
+					error: 'sessionId is required. Charts must be scoped to a specific chat session.',
+				},
+				{
+					status: 400,
+					headers: {
+						'Access-Control-Allow-Origin': '*',
+					},
+				}
+			);
+		}
+
+		const resolvedSessionId = sessionId.trim();
 
 		// Add to queue based on action
 		let chartMessage;

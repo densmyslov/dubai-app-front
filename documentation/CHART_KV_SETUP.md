@@ -87,10 +87,11 @@ npm run dev
 
 ## Verifying Setup
 
-1. **Send a test chart:**
+1. **Send a test chart (session-scoped):**
    ```bash
-   ./test-chart-webhook.sh https://your-app.pages.dev your-secret
+   ./test-chart-webhook.sh https://your-app.pages.dev your-secret YOUR_SESSION_ID
    ```
+   > Charts must include the chat `sessionId`. Use the ID shown in the chat header (or generate a test one).
 
 2. **Check KV data (optional):**
    ```bash
@@ -98,7 +99,7 @@ npm run dev
    npx wrangler kv key list --namespace-id=your-namespace-id
 
    # Get the charts data
-   npx wrangler kv key get "charts:messages" --namespace-id=your-namespace-id
+   npx wrangler kv key get "charts:session:<SESSION_ID>" --namespace-id=your-namespace-id
    ```
 
 3. **Check browser console:**
@@ -136,8 +137,8 @@ npm run dev
 
 The CHART_KV namespace stores:
 
-**Key:** `charts:messages`
-**Value:** JSON array of chart messages (max 50)
+**Key format:** `charts:session:<sessionId>`
+**Value:** JSON array of chart messages for that session (max 50)
 
 ```json
 [
@@ -146,7 +147,7 @@ The CHART_KV namespace stores:
     "type": "chart",
     "chartId": "revenue-chart",
     "timestamp": 1234567890000,
-    "sessionId": "optional",
+    "sessionId": "user-session-id-123",
     "config": {
       "title": "Revenue",
       "chartType": "line",
@@ -179,6 +180,6 @@ If you want to save on KV namespaces, you can reuse WEBHOOK_KV for charts:
 
 3. Charts and chat messages will share the same KV but use different keys:
    - Chats: `webhook:messages`
-   - Charts: `charts:messages`
+   - Charts: `charts:session:<SESSION_ID>`
 
 This is fine for small-scale deployments but may hit KV operation limits faster.

@@ -22,17 +22,18 @@ The chart webhook system provides a separate channel for dynamically injecting c
 
 4. **Send charts from your backend**:
    ```bash
-   curl -X POST https://your-app.com/api/charts \
-     -H "Content-Type: application/json" \
-     -H "X-Webhook-Secret: your-secret-here" \
-     -d '{
-       "action": "add",
-       "chartId": "my-chart",
-       "config": {
-         "title": "My Chart",
-         "chartType": "line",
-         "categories": ["A", "B", "C"],
-         "series": [{"name": "Data", "data": [10, 20, 15]}]
+  curl -X POST https://your-app.com/api/charts \
+    -H "Content-Type: application/json" \
+    -H "X-Webhook-Secret: your-secret-here" \
+    -d '{
+      "action": "add",
+      "chartId": "my-chart",
+      "sessionId": "session-abc123",
+      "config": {
+        "title": "My Chart",
+        "chartType": "line",
+        "categories": ["A", "B", "C"],
+        "series": [{"name": "Data", "data": [10, 20, 15]}]
        }
      }'
    ```
@@ -48,10 +49,10 @@ Use the included test script to verify your webhook is working:
 chmod +x test-chart-webhook.sh
 
 # Run tests
-./test-chart-webhook.sh http://localhost:3000 your-secret
+./test-chart-webhook.sh http://localhost:3000 your-secret session-abc123
 
 # Or test against production
-./test-chart-webhook.sh https://your-app.pages.dev your-secret
+./test-chart-webhook.sh https://your-app.pages.dev your-secret session-abc123
 ```
 
 The script will add sample charts (line, bar, pie), update one, and remove one to demonstrate all webhook actions.
@@ -133,7 +134,7 @@ X-Webhook-Secret: <your-secret> (optional)
 {
   "action": "add",
   "chartId": "unique-chart-id",
-  "sessionId": "optional-session-id",
+  "sessionId": "session-abc123",
   "config": {
     "title": "Monthly Revenue",
     "chartType": "line",
@@ -163,7 +164,7 @@ X-Webhook-Secret: <your-secret> (optional)
 
 - `action` (required): One of `"add"`, `"update"`, or `"remove"`
 - `chartId` (required): Unique identifier for the chart
-- `sessionId` or `session_id` (optional): Session ID for filtering (only deliver to specific user)
+- `sessionId` or `session_id` (required): Chat session ID (matches the value shown in the chat header)
   - **Note**: Both camelCase (`sessionId`) and snake_case (`session_id`) are accepted for backend compatibility
 - `config` (required for add/update): Chart configuration object
 
@@ -217,7 +218,7 @@ SSE endpoint for receiving real-time chart updates.
 
 #### Query Parameters
 
-- `sessionId` (optional): Filter charts by session ID
+- `sessionId` (required): Filter charts by session ID
 
 #### Response
 
@@ -275,6 +276,7 @@ curl -X POST https://your-app.com/api/charts \
   -d '{
     "action": "add",
     "chartId": "revenue-2024",
+    "sessionId": "session-abc123",
     "config": {
       "title": "2024 Revenue",
       "chartType": "line",
@@ -297,6 +299,7 @@ curl -X POST https://your-app.com/api/charts \
   -d '{
     "action": "add",
     "chartId": "sales-comparison",
+    "sessionId": "session-abc123",
     "config": {
       "title": "Sales Comparison",
       "chartType": "bar",
@@ -323,6 +326,7 @@ curl -X POST https://your-app.com/api/charts \
   -d '{
     "action": "add",
     "chartId": "market-share",
+    "sessionId": "session-abc123",
     "config": {
       "title": "Market Share",
       "chartType": "pie",
@@ -369,7 +373,8 @@ curl -X POST https://your-app.com/api/charts \
   -H "Content-Type: application/json" \
   -d '{
     "action": "remove",
-    "chartId": "revenue-2024"
+    "chartId": "revenue-2024",
+    "sessionId": "session-abc123"
   }'
 ```
 
@@ -404,15 +409,16 @@ When integrating with AWS Lambda, your function should POST to the chart webhook
 import json
 import requests
 
-def send_chart_to_frontend(chart_id, config, session_id=None):
+def send_chart_to_frontend(chart_id, config, session_id):
+    if not session_id:
+        raise ValueError("session_id is required – charts must be scoped to a chat session")
+
     payload = {
         "action": "add",
         "chartId": chart_id,
-        "config": config
+        "config": config,
+        "sessionId": session_id,
     }
-
-    if session_id:
-        payload["sessionId"] = session_id
 
     response = requests.post(
         "https://your-app.com/api/charts",
@@ -489,7 +495,7 @@ Charts can be filtered by session ID to deliver charts only to specific users:
 1. **Frontend**: The DynamicCharts component automatically uses the ChatWindow's session ID
 2. **Backend**: Include `sessionId` in the webhook payload
 3. **Behavior**:
-   - Charts with no `sessionId` are delivered to all connected clients
+   - Requests without a `sessionId` are rejected (400) to prevent cross-session leaks
    - Charts with a `sessionId` are only delivered to clients with matching session IDs
 
 ## Limitations

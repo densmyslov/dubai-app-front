@@ -18,6 +18,7 @@
 # Configuration
 URL="${1:-http://localhost:3000}"
 SECRET="${2:-proli-troli-hupla-boobs}"
+SESSION_ID="${3:-demo-session-123}"
 ENDPOINT="$URL/api/charts"
 
 echo "============================================"
@@ -25,6 +26,7 @@ echo "Chart Webhook Test Script"
 echo "============================================"
 echo "Endpoint: $ENDPOINT"
 echo "Secret: ${SECRET:0:8}..."
+echo "Session ID: $SESSION_ID"
 echo ""
 
 # Test 1: Add a line chart
@@ -35,6 +37,7 @@ curl -X POST "$ENDPOINT" \
   -d '{
     "action": "add",
     "chartId": "test-line-chart",
+    "sessionId": "'"$SESSION_ID"'",
     "config": {
       "title": "Test Line Chart",
       "chartType": "line",
@@ -61,6 +64,7 @@ curl -X POST "$ENDPOINT" \
   -d '{
     "action": "add",
     "chartId": "test-bar-chart",
+    "sessionId": "'"$SESSION_ID"'",
     "config": {
       "title": "Test Bar Chart",
       "chartType": "bar",
@@ -87,6 +91,7 @@ curl -X POST "$ENDPOINT" \
   -d '{
     "action": "add",
     "chartId": "test-pie-chart",
+    "sessionId": "'"$SESSION_ID"'",
     "config": {
       "title": "Test Pie Chart",
       "chartType": "pie",
@@ -117,6 +122,7 @@ curl -X POST "$ENDPOINT" \
   -d '{
     "action": "update",
     "chartId": "test-line-chart",
+    "sessionId": "'"$SESSION_ID"'",
     "config": {
       "title": "Test Line Chart (Updated)",
       "chartType": "line",
@@ -146,7 +152,8 @@ curl -X POST "$ENDPOINT" \
   -H "X-Webhook-Secret: $SECRET" \
   -d '{
     "action": "remove",
-    "chartId": "test-pie-chart"
+    "chartId": "test-pie-chart",
+    "sessionId": "'"$SESSION_ID"'"
   }'
 echo -e "\n"
 
