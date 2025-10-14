@@ -13,11 +13,12 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
 
 ## Key Features
 1. **Dynamic manifest-driven dashboard** - No build/deploy needed for content updates
-2. Real-time Claude AI chat with SSE streaming
-3. Webhook system for external message delivery
-4. Interactive charts (line, bar), KPIs, markdown, and tables
-5. Dark/light theme toggle
-6. Edge-rendered with no-store caching for instant updates
+2. **Auto-refresh dashboard** - Client-side polling (5s interval) for instant manifest updates
+3. Real-time Claude AI chat with SSE streaming
+4. Webhook system for external message delivery
+5. Interactive charts (line, bar), KPIs, markdown, and tables
+6. Dark/light theme toggle
+7. Edge-rendered with client-side reactivity
 
 ## Project Structure
 ```
@@ -30,6 +31,7 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
     /webhook        # POST endpoint for external messages
     /webhook/stream # SSE stream for real-time messages
   /components
+    ManifestProvider.tsx # Client-side manifest provider with auto-refresh
     WidgetRenderer.tsx   # Dynamic widget renderer
     KPICard.tsx          # KPI widget
     ChartCard.tsx        # Chart widget (ECharts)
@@ -37,6 +39,8 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
     TableWidget.tsx      # Table widget
     ChatWindow.tsx       # Chat interface
     DynamicCharts.tsx    # Dynamic chart renderer (receives charts via webhook)
+  /hooks
+    useManifest.ts  # Hook for polling manifest updates (5s interval)
   /lib
     manifest.ts     # Manifest types and defaults
     config.ts       # App configuration
@@ -44,7 +48,7 @@ This is a Next.js 14 application that displays Dubai real estate investment anal
     messageQueue.ts # Chat message queue
   /types
     chart.ts        # Chart type definitions
-  page.tsx          # Main page (fetches manifest + renders widgets)
+  page.tsx          # Main page (renders ManifestProvider)
 MANIFEST.md         # Documentation for manifest system
 CHART_WEBHOOK.md    # Documentation for chart webhook system
 ```
@@ -99,15 +103,21 @@ npm run lint
 
 ## Architecture
 
-### Dynamic Manifest System
+### Dynamic Manifest System with Auto-Refresh
 
 The dashboard is **fully dynamic** and requires no rebuild to update:
 
-1. **Page Load**: [page.tsx](app/page.tsx) fetches `/api/manifest` with `cache: 'no-store'`
-2. **Manifest Retrieval**: [/api/manifest](app/api/manifest/route.ts) reads from Cloudflare KV (or returns default)
-3. **Widget Rendering**: [WidgetRenderer](app/components/WidgetRenderer.tsx) dynamically renders each widget
-4. **LLM Updates**: Lambda/Claude POSTs new manifest to `/api/manifest` to update dashboard
-5. **Instant Update**: Next page load shows new content (no build, no deploy)
+1. **Initial Load**: [ManifestProvider](app/components/ManifestProvider.tsx) uses the `useManifest` hook to fetch `/api/manifest`
+2. **Auto-Refresh**: The hook polls `/api/manifest` every 5 seconds for updates
+3. **Manifest Retrieval**: [/api/manifest](app/api/manifest/route.ts) reads from Cloudflare KV (or returns default)
+4. **Widget Rendering**: [WidgetRenderer](app/components/WidgetRenderer.tsx) dynamically renders each widget
+5. **LLM Updates**: Lambda/Claude POSTs new manifest to `/api/manifest` to update dashboard
+6. **Instant Update**: Dashboard automatically refreshes within 5 seconds (no page reload, no build, no deploy)
+
+**Key Components**:
+- [useManifest hook](app/hooks/useManifest.ts): Client-side polling with 5-second interval
+- [ManifestProvider](app/components/ManifestProvider.tsx): Wraps widget grid with auto-refresh logic
+- [page.tsx](app/page.tsx): Simple container that renders ManifestProvider
 
 See [MANIFEST.md](MANIFEST.md) for detailed manifest schema and LLM integration guide.
 
@@ -186,12 +196,14 @@ The app includes a **real-time webhook system** for delivering messages from ext
 
 ## Data Flow
 
-### Dashboard Rendering (New Architecture)
-1. **Page load**: [page.tsx](app/page.tsx) calls `fetch('/api/manifest', { cache: 'no-store' })`
-2. **Manifest API**: Reads manifest from MANIFEST_KV (or returns default)
-3. **Widget rendering**: WidgetRenderer dynamically creates widgets
-4. **Edge-rendered**: Runs on Cloudflare Edge, no server needed
-5. **Instant updates**: Refresh page to see new manifest (no rebuild)
+### Dashboard Rendering with Auto-Refresh
+1. **Client mount**: [ManifestProvider](app/components/ManifestProvider.tsx) mounts and calls `useManifest` hook
+2. **Initial fetch**: Hook fetches `/api/manifest` on mount
+3. **Polling**: Hook polls `/api/manifest` every 5 seconds with `cache: 'no-store'`
+4. **Manifest API**: Reads manifest from MANIFEST_KV (or returns default)
+5. **Widget rendering**: WidgetRenderer dynamically creates widgets on each update
+6. **Edge-rendered**: Runs on Cloudflare Edge, no server needed
+7. **Auto-refresh**: Dashboard updates automatically when manifest changes in KV (within 5 seconds)
 
 ## Important Notes
 
