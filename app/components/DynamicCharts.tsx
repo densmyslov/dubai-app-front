@@ -79,6 +79,14 @@ const DynamicCharts: React.FC = () => {
           );
 
           setCharts((prev) => {
+            const existing = prev.get(chartId);
+
+            // Check if chart data actually changed (deep comparison)
+            if (existing && JSON.stringify(existing.config) === JSON.stringify(config)) {
+              console.log("[DynamicCharts] Chart", chartId, "unchanged, skipping update");
+              return prev; // Return same reference to prevent re-render
+            }
+
             const updated = new Map(prev);
             updated.set(chartId, {
               chartId,
@@ -192,6 +200,7 @@ interface DynamicChartProps {
 
 const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
   const ref = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
   const [isDark, setIsDark] = useState(false);
 
   // Detect dark mode
@@ -208,11 +217,25 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
     return () => observer.disconnect();
   }, []);
 
-  // Render chart
+  // Initialize chart once
   useEffect(() => {
     if (!ref.current) return;
 
-    const chart = echarts.init(ref.current);
+    chartRef.current = echarts.init(ref.current);
+
+    const onResize = () => chartRef.current?.resize();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      chartRef.current?.dispose();
+      chartRef.current = null;
+    };
+  }, []);
+
+  // Update chart when config or theme changes
+  useEffect(() => {
+    if (!chartRef.current) return;
 
     // Build ECharts option from config
     const option: echarts.EChartsOption = {
@@ -275,15 +298,11 @@ const DynamicChart: React.FC<DynamicChartProps> = ({ chartId, config }) => {
       data: s.data as any,
     }));
 
-    chart.setOption(option);
-
-    const onResize = () => chart.resize();
-    window.addEventListener("resize", onResize);
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      chart.dispose();
-    };
+    // Use setOption with notMerge: false to update existing chart smoothly
+    chartRef.current.setOption(option, {
+      notMerge: false, // Merge with existing option for smooth updates
+      lazyUpdate: true, // Batch updates for better performance
+    });
   }, [config, isDark, chartId]);
 
   return (
