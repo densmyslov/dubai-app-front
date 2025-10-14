@@ -106,6 +106,9 @@ const DynamicCharts: React.FC<DynamicChartsProps> = ({ sessionId }) => {
             updated.delete(chartId);
             return updated;
           });
+        } else {
+          // Log unhandled types for debugging
+          console.warn("[DynamicCharts] Unhandled payload type:", payload?.type, "Full payload:", payload);
         }
       } catch (err) {
         console.error("[DynamicCharts] Failed to parse SSE message", err, event.data);
