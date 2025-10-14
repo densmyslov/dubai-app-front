@@ -95,6 +95,11 @@ const DynamicCharts: React.FC = () => {
             });
             console.log("[DynamicCharts] Charts state updated. Total charts:", updated.size);
             console.log("[DynamicCharts] Chart IDs:", Array.from(updated.keys()));
+            if (isHistory) {
+              console.log("[DynamicCharts] Chart", chartId, "loaded from history (likely KV)");
+            } else {
+              console.log("[DynamicCharts] Chart", chartId, "received live from SSE");
+            }
             return updated;
           });
         } else if (payload?.type === "chart_remove") {
