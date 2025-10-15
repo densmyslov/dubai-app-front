@@ -2,10 +2,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 
-export type Series = { name: string; data: number[] };
+export type Series = { name: string; data: (number | null)[] };
 
 export interface ChartCardProps {
   title: string;
+  chartType?: 'line' | 'bar' | 'pie' | 'scatter' | 'area';
   categories: string[];
   series: Series[];
   streamSessionId?: string; // ok to keep/ignore
@@ -13,6 +14,7 @@ export interface ChartCardProps {
 
 const ChartCard: React.FC<ChartCardProps> = ({
   title,
+  chartType = 'line',
   categories,
   series,
 }) => {
@@ -59,7 +61,7 @@ const ChartCard: React.FC<ChartCardProps> = ({
         axisLabel: { color: isDark ? "#94a3b8" : "#64748b" },
         splitLine: { lineStyle: { color: isDark ? "#334155" : "#e2e8f0" } },
       },
-      series: series.map((s) => ({ name: s.name, type: "line", data: s.data })),
+      series: series.map((s) => ({ name: s.name, type: chartType, data: s.data })),
     });
     const onResize = () => chart.resize();
     window.addEventListener("resize", onResize);
@@ -67,7 +69,7 @@ const ChartCard: React.FC<ChartCardProps> = ({
       window.removeEventListener("resize", onResize);
       chart.dispose();
     };
-  }, [title, categories, series, isDark]);
+  }, [title, chartType, categories, series, isDark]);
 
   return (
     <div

@@ -11,7 +11,7 @@ export interface ChartConfig {
   categories?: string[];
   series: Array<{
     name: string;
-    data: number[] | Array<{ value: number; name: string }>;
+    data: (number | null)[] | Array<{ value: number; name: string }>;
     type?: string;
   }>;
   options?: {

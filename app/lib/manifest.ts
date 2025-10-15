@@ -30,8 +30,9 @@ export interface KPIWidget extends BaseWidget {
 export interface ChartWidget extends BaseWidget {
   type: 'chart';
   title: string;
+  chartType?: 'line' | 'bar' | 'pie' | 'scatter' | 'area';
   categories: string[];
-  series: Array<{ name: string; data: number[] }>;
+  series: Array<{ name: string; data: (number | null)[] }>;
 }
 
 export interface MarkdownWidget extends BaseWidget {
