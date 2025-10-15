@@ -30,6 +30,43 @@ const DynamicCharts: React.FC = () => {
   const [mounted, setMounted] = useState(false);
   const sourceRef = useRef<EventSource | null>(null);
 
+  // Delete chart handler
+  const handleDeleteChart = async (chartId: string) => {
+    console.log('[DynamicCharts] Deleting chart:', chartId);
+
+    try {
+      // Call the delete API
+      const response = await fetch('/api/charts', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chartId,
+          sessionId, // Include sessionId for proper KV key
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete chart: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('[DynamicCharts] Chart deleted successfully:', result);
+
+      // Remove from local state immediately
+      setCharts((prev) => {
+        const updated = new Map(prev);
+        updated.delete(chartId);
+        console.log('[DynamicCharts] Removed from local state. Remaining:', updated.size);
+        return updated;
+      });
+    } catch (error) {
+      console.error('[DynamicCharts] Failed to delete chart:', error);
+      throw error; // Re-throw to let the button handler show error UI
+    }
+  };
+
   // Client-side mounting guard
   useEffect(() => {
     setMounted(true);
@@ -184,6 +221,7 @@ const DynamicCharts: React.FC = () => {
             key={chart.chartId}
             chartId={chart.chartId}
             config={chart.config}
+            onDelete={handleDeleteChart}
           />
         ))}
       </div>
@@ -201,12 +239,14 @@ const DynamicCharts: React.FC = () => {
 interface DynamicChartProps {
   chartId: string;
   config: ChartConfig;
+  onDelete?: (chartId: string) => void;
 }
 
-const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config }) => {
+const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config, onDelete }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [isDark, setIsDark] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Debug: Log when component renders
   useEffect(() => {
@@ -317,18 +357,60 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config 
     });
   }, [config, isDark, chartId]);
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+
+    if (!confirm(`Delete chart "${config.title}"?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onDelete(chartId);
+    } catch (error) {
+      console.error('[DynamicChart] Failed to delete chart:', error);
+      alert('Failed to delete chart. Please try again.');
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div
-      ref={ref}
-      className="rounded-2xl bg-white dark:bg-slate-800 p-4 shadow"
-      style={{ height: 360 }}
-    />
+    <div className="relative rounded-2xl bg-white dark:bg-slate-800 p-4 shadow">
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className="absolute top-2 right-2 z-10 p-2 rounded-lg bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Delete chart"
+          aria-label={`Delete chart ${config.title}`}
+        >
+          {isDeleting ? (
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          )}
+        </button>
+      )}
+
+      {/* Chart container */}
+      <div
+        ref={ref}
+        style={{ height: 360 }}
+      />
+    </div>
   );
 }, (prevProps, nextProps) => {
   // Custom comparison: only re-render if config actually changed
   return (
     prevProps.chartId === nextProps.chartId &&
-    JSON.stringify(prevProps.config) === JSON.stringify(nextProps.config)
+    JSON.stringify(prevProps.config) === JSON.stringify(nextProps.config) &&
+    prevProps.onDelete === nextProps.onDelete
   );
 });
 

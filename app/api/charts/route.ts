@@ -271,6 +271,67 @@ export async function POST(request: NextRequest) {
 	}
 }
 
+// Delete chart endpoint
+export async function DELETE(request: NextRequest) {
+	try {
+		const body = await request.json() as {
+			chartId?: unknown;
+			sessionId?: unknown;
+			session_id?: unknown;
+		};
+		const { chartId, sessionId, session_id } = body;
+
+		if (!chartId || typeof chartId !== 'string') {
+			return NextResponse.json(
+				{ error: 'chartId is required' },
+				{ status: 400 }
+			);
+		}
+
+		// Accept both sessionId (camelCase) and session_id (snake_case)
+		const resolvedSessionId = typeof sessionId === 'string' && sessionId.trim().length > 0
+			? sessionId
+			: typeof session_id === 'string' && (session_id as string).trim().length > 0
+			? session_id as string
+			: undefined;
+
+		console.log('[charts/DELETE] Deleting chart:', chartId, 'sessionId:', resolvedSessionId);
+
+		// Get KV to delete from storage
+		const env = getRequestContext().env as Record<string, unknown>;
+		const kv = env.CHART_KV as KVNamespace | undefined;
+
+		if (kv) {
+			// Delete the specific chart from KV by rewriting the array without it
+			const storageKey = resolvedSessionId
+				? `charts:session:${resolvedSessionId}`
+				: 'charts:global';
+
+			const stored = await kv.get(storageKey, { type: 'json' }) as any[];
+			if (stored && Array.isArray(stored)) {
+				const filtered = stored.filter((chart: any) => chart.chartId !== chartId);
+				await kv.put(storageKey, JSON.stringify(filtered));
+				console.log('[charts/DELETE] Removed from KV. Before:', stored.length, 'After:', filtered.length);
+			}
+		}
+
+		// Also send remove message to queue for real-time updates
+		const chartMessage = chartQueue.removeChart(chartId, resolvedSessionId);
+
+		return NextResponse.json({
+			success: true,
+			chartId,
+			messageId: chartMessage.id,
+		});
+	} catch (error) {
+		console.error('[charts/DELETE] Error:', error);
+		return NextResponse.json(
+			{ error: 'Failed to delete chart' },
+			{ status: 500 }
+		);
+	}
+}
+
 // Health check endpoint
 export async function GET() {
 	return NextResponse.json(
