@@ -43,11 +43,22 @@ const ChartCard: React.FC<ChartCardProps> = ({
         text: title,
         textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
       },
+      legend: {
+        top: 35,
+        textStyle: { color: isDark ? "#94a3b8" : "#64748b" },
+      },
       tooltip: {
         trigger: "axis",
         backgroundColor: isDark ? "#1e293b" : "#ffffff",
         borderColor: isDark ? "#475569" : "#e2e8f0",
         textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
+      },
+      grid: {
+        top: 80,
+        left: "3%",
+        right: "4%",
+        bottom: "3%",
+        containLabel: true,
       },
       xAxis: {
         type: "category",

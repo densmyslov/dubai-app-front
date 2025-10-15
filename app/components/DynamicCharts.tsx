@@ -262,6 +262,7 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config 
         ...(config.options?.tooltip || {}),
       },
       grid: {
+        top: config.options?.legend === false ? 50 : 80,
         left: "3%",
         right: "4%",
         bottom: "3%",
@@ -273,6 +274,7 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config 
     // Handle legend - show by default unless explicitly disabled
     if (config.options?.legend !== false) {
       option.legend = {
+        top: 35,
         textStyle: { color: isDark ? "#94a3b8" : "#64748b" },
       };
     }
