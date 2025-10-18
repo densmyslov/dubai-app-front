@@ -1,11 +1,11 @@
 // ============================================================================
 // In-Memory Message Queue for Webhook Messages
 // ============================================================================
-// Maintains a simple singleton queue that buffers incoming webhook messages and
-// notifies active SSE subscribers. In production workloads you should replace
-// this with a shared data store (Redis, Cloudflare KV/Queues, etc.) to persist
-// across multiple instances, but the in-memory approach works for single-region
-// hobby deployments and local development.
+// Maintains a simple singleton queue that buffers incoming webhook messages so
+// polling clients can retrieve recent items. In production workloads you should
+// replace this with a shared data store (Redis, Cloudflare KV/Queues, etc.) to
+// persist across multiple instances, but the in-memory approach works for
+// single-region hobby deployments and local development.
 // ============================================================================
 
 export interface WebhookMessage {
@@ -17,7 +17,6 @@ export interface WebhookMessage {
 
 class MessageQueue {
   private messages: WebhookMessage[] = [];
-  private listeners: Set<(message: WebhookMessage) => void> = new Set();
   private readonly MAX_MESSAGES = 100;
 
   addMessage(content: string, sessionId?: string): WebhookMessage {
@@ -34,13 +33,7 @@ class MessageQueue {
       this.messages.shift();
     }
 
-    this.listeners.forEach((listener) => listener(message));
     return message;
-  }
-
-  subscribe(callback: (message: WebhookMessage) => void): () => void {
-    this.listeners.add(callback);
-    return () => this.listeners.delete(callback);
   }
 
   getRecentMessages(limit: number = 10, sessionId?: string): WebhookMessage[] {
@@ -57,10 +50,6 @@ class MessageQueue {
 
   clear(): void {
     this.messages = [];
-  }
-
-  getListenerCount(): number {
-    return this.listeners.size;
   }
 }
 

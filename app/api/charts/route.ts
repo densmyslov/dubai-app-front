@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { KVNamespace } from '@cloudflare/workers-types';
-import { chartQueue, type ChartConfig } from '../../lib/chartQueue';
-import { appendChartToKV } from '../../lib/chartStorage';
+import { chartQueue, type ChartConfig, type ChartMessage } from '../../lib/chartQueue';
+import { appendChartToKV, getRecentChartsFromKV } from '../../lib/chartStorage';
 
 export const runtime = 'edge';
 
@@ -10,7 +10,7 @@ export const runtime = 'edge';
 // Chart Webhook API Endpoint
 // ============================================================================
 // Receives external POST requests with chart configurations and adds them
-// to the queue for delivery to dashboard clients via SSE.
+// to storage so dashboard clients can retrieve them on demand.
 //
 // This endpoint is separate from the chat webhook to avoid cluttering
 // the chat interface with chart data.
@@ -332,13 +332,38 @@ export async function DELETE(request: NextRequest) {
 	}
 }
 
-// Health check endpoint
-export async function GET() {
+// Retrieve current chart configurations
+export async function GET(request: NextRequest) {
+	const { searchParams } = request.nextUrl;
+	const sessionId = searchParams.get('sessionId') || undefined;
+
+	const env = getRequestContext().env as Record<string, unknown>;
+	const kv = env.CHART_KV as KVNamespace | undefined;
+
+	const kvCharts = kv ? await getRecentChartsFromKV(kv, 100, sessionId) : [];
+	const queueCharts = chartQueue.getRecentMessages(100, sessionId);
+
+	const chartsById = new Map<string, ChartMessage>();
+	for (const message of [...kvCharts, ...queueCharts]) {
+		if (message.type === 'chart_remove') {
+			chartsById.delete(message.chartId);
+			continue;
+		}
+		if (message.config) {
+			chartsById.set(message.chartId, message);
+		}
+	}
+
+	const charts = Array.from(chartsById.values())
+		.sort((a, b) => a.timestamp - b.timestamp)
+		.map(({ chartId, config, timestamp }) => ({
+			chartId,
+			config,
+			timestamp,
+		}));
+
 	return NextResponse.json(
-		{
-			status: 'ok',
-			activeConnections: chartQueue.getListenerCount(),
-		},
+		{ charts },
 		{
 			headers: {
 				'Access-Control-Allow-Origin': '*',

@@ -1,8 +1,8 @@
 // ============================================================================
 // In-Memory Chart Queue for Dynamic Chart Updates
 // ============================================================================
-// Maintains a singleton queue for chart configuration messages that get
-// delivered to the dashboard via SSE. This allows the backend to dynamically
+// Maintains a singleton queue for chart configuration messages that polling
+// dashboard clients can retrieve. This allows the backend to dynamically
 // inject charts into the frontend without cluttering the chat interface.
 // ============================================================================
 
@@ -36,7 +36,6 @@ export interface ChartConfig {
 
 class ChartQueue {
   private messages: ChartMessage[] = [];
-  private listeners: Set<(message: ChartMessage) => void> = new Set();
   private readonly MAX_MESSAGES = 50;
 
   addChart(chartId: string, config: ChartConfig, sessionId?: string): ChartMessage {
@@ -55,7 +54,6 @@ class ChartQueue {
       this.messages.shift();
     }
 
-    this.listeners.forEach((listener) => listener(message));
     return message;
   }
 
@@ -75,7 +73,6 @@ class ChartQueue {
       this.messages.shift();
     }
 
-    this.listeners.forEach((listener) => listener(message));
     return message;
   }
 
@@ -94,13 +91,7 @@ class ChartQueue {
       this.messages.shift();
     }
 
-    this.listeners.forEach((listener) => listener(message));
     return message;
-  }
-
-  subscribe(callback: (message: ChartMessage) => void): () => void {
-    this.listeners.add(callback);
-    return () => this.listeners.delete(callback);
   }
 
   getRecentMessages(limit: number = 10, sessionId?: string): ChartMessage[] {
@@ -124,10 +115,6 @@ class ChartQueue {
 
   clear(): void {
     this.messages = [];
-  }
-
-  getListenerCount(): number {
-    return this.listeners.size;
   }
 }
 

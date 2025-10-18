@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { KVNamespace } from '@cloudflare/workers-types';
-import { messageQueue } from '../../lib/messageQueue';
-import { appendMessageToKV } from '../../lib/webhookStorage';
+import { messageQueue, type WebhookMessage } from '../../lib/messageQueue';
+import { appendMessageToKV, getRecentMessagesFromKV } from '../../lib/webhookStorage';
 
 export const runtime = 'edge';
 
@@ -10,7 +10,7 @@ export const runtime = 'edge';
 // Webhook API Endpoint
 // ============================================================================
 // Receives external POST requests and adds messages to the queue for
-// delivery to chat clients via SSE.
+// retrieval by chat clients via periodic polling.
 //
 // Usage:
 //   POST /api/webhook
@@ -132,13 +132,47 @@ export async function POST(request: NextRequest) {
 	}
 }
 
-// Health check endpoint
-export async function GET() {
+// Retrieve webhook messages for the client poller
+export async function GET(request: NextRequest) {
+	const { searchParams } = request.nextUrl;
+	const sessionId = searchParams.get('sessionId') || undefined;
+	const sinceParam = searchParams.get('since');
+	const limitParam = searchParams.get('limit');
+
+	const limit = limitParam
+		? Math.min(Math.max(Number.parseInt(limitParam, 10) || 0, 1), 100)
+		: 50;
+	const since =
+		sinceParam !== null ? Number.parseInt(sinceParam, 10) || undefined : undefined;
+	const fetchWindow = Math.max(limit, 100);
+
+	const env = getRequestContext().env as Record<string, unknown>;
+	const kv = env.WEBHOOK_KV as KVNamespace | undefined;
+
+	const kvMessages = kv
+		? await getRecentMessagesFromKV(kv, fetchWindow, sessionId)
+		: [];
+	const queueMessages = messageQueue.getRecentMessages(fetchWindow, sessionId);
+
+	const deduped = new Map<string, WebhookMessage>();
+	for (const message of [...kvMessages, ...queueMessages]) {
+		deduped.set(message.id, message);
+	}
+
+	let messages = Array.from(deduped.values()).sort(
+		(a, b) => a.timestamp - b.timestamp
+	);
+
+	if (since !== undefined) {
+		messages = messages.filter((message) => message.timestamp > since);
+	}
+
+	if (messages.length > limit) {
+		messages = messages.slice(-limit);
+	}
+
 	return NextResponse.json(
-		{
-			status: 'ok',
-			activeConnections: messageQueue.getListenerCount(),
-		},
+		{ messages },
 		{
 			headers: {
 				'Access-Control-Allow-Origin': '*',

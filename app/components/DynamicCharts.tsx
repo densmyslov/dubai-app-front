@@ -1,15 +1,15 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { useSession } from "../contexts/SessionContext";
 import type { ChartConfig } from "../lib/chartQueue";
 
-// ============================================================================
+// ============================================================================ 
 // DynamicCharts Component
 // ============================================================================
-// Listens to the chart SSE stream and dynamically renders charts sent from
-// the backend. Charts are displayed in a grid layout and can be added,
-// updated, or removed in real-time without cluttering the chat interface.
+// Polls the chart API and dynamically renders charts sent from the backend.
+// Charts are displayed in a grid layout and can be added, updated, or removed
+// without cluttering the chat interface.
 //
 // The component automatically uses the session ID from SessionContext to ensure
 // that charts are isolated per user session.
@@ -21,6 +21,14 @@ interface ChartState {
   timestamp: number;
 }
 
+const CHART_POLL_INTERVAL_MS = 5000;
+
+interface ChartApiEntry {
+  chartId: string;
+  config: ChartConfig;
+  timestamp?: number;
+}
+
 const DynamicCharts: React.FC = () => {
   const { sessionId } = useSession();
   const [charts, setCharts] = useState<Map<string, ChartState>>(new Map());
@@ -28,7 +36,9 @@ const DynamicCharts: React.FC = () => {
     "disconnected" | "connecting" | "connected"
   >("disconnected");
   const [mounted, setMounted] = useState(false);
-  const sourceRef = useRef<EventSource | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFetchingRef = useRef(false);
+  const previousSessionIdRef = useRef<string | null>(null);
 
   // Delete chart handler
   const handleDeleteChart = async (chartId: string) => {
@@ -72,108 +82,135 @@ const DynamicCharts: React.FC = () => {
     setMounted(true);
   }, []);
 
-  // Subscribe to chart stream
-  useEffect(() => {
-    if (!mounted) return;
+  const fetchCharts = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
 
-    setConnectionStatus("connecting");
+    try {
+      const params = new URLSearchParams();
+      if (sessionId) params.set("sessionId", sessionId);
+      const query = params.toString();
+      const response = await fetch(`/api/charts${query ? `?${query}` : ""}`, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-    const streamUrl = `/api/charts/stream${
-      sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""
-    }`;
-    console.log("[DynamicCharts] Connecting to chart stream:", streamUrl);
-
-    const es = new EventSource(streamUrl);
-    sourceRef.current = es;
-
-    es.onopen = () => {
-      console.log("[DynamicCharts] Chart stream connection opened");
-      setConnectionStatus("connected");
-    };
-
-    es.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        console.log("[DynamicCharts] Received payload:", payload);
-
-        // Ignore keepalives and connection confirmations
-        if (payload?.type === "connected" || payload?.type === "ping") {
-          return;
-        }
-
-        // Handle chart messages
-        if (payload?.type === "chart" || payload?.type === "chart_update") {
-          const { chartId, config, isHistory } = payload;
-
-          if (!chartId || !config) {
-            console.warn("[DynamicCharts] Invalid chart payload:", payload);
-            return;
-          }
-
-          console.log(
-            `[DynamicCharts] ${isHistory ? "Loading" : "Adding/updating"} chart:`,
-            chartId
-          );
-
-          setCharts((prev) => {
-            const existing = prev.get(chartId);
-
-            // Check if chart data actually changed (deep comparison)
-            if (existing && JSON.stringify(existing.config) === JSON.stringify(config)) {
-              console.log("[DynamicCharts] Chart", chartId, "unchanged, skipping update");
-              return prev; // Return same reference to prevent re-render
-            }
-
-            const updated = new Map(prev);
-            updated.set(chartId, {
-              chartId,
-              config,
-              timestamp: payload.timestamp || Date.now(),
-            });
-            console.log("[DynamicCharts] Charts state updated. Total charts:", updated.size);
-            console.log("[DynamicCharts] Chart IDs:", Array.from(updated.keys()));
-            if (isHistory) {
-              console.log("[DynamicCharts] Chart", chartId, "loaded from history (likely KV)");
-            } else {
-              console.log("[DynamicCharts] Chart", chartId, "received live from SSE");
-            }
-            return updated;
-          });
-        } else if (payload?.type === "chart_remove") {
-          const { chartId } = payload;
-
-          if (!chartId) {
-            console.warn("[DynamicCharts] Invalid chart removal payload:", payload);
-            return;
-          }
-
-          console.log("[DynamicCharts] Removing chart:", chartId);
-
-          setCharts((prev) => {
-            const updated = new Map(prev);
-            updated.delete(chartId);
-            return updated;
-          });
-        } else {
-          // Log unhandled types for debugging
-          console.warn("[DynamicCharts] Unhandled payload type:", payload?.type, "Full payload:", payload);
-        }
-      } catch (err) {
-        console.error("[DynamicCharts] Failed to parse SSE message", err, event.data);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch charts (${response.status})`);
       }
+
+      const data = (await response.json()) as { charts?: ChartApiEntry[] };
+      const incoming = Array.isArray(data.charts) ? data.charts : [];
+
+      setCharts((prev) => {
+        const next = new Map<string, ChartState>();
+
+        for (const chart of incoming) {
+          if (!chart || typeof chart.chartId !== "string" || !chart.config) {
+            continue;
+          }
+
+          const timestamp =
+            typeof chart.timestamp === "number" ? chart.timestamp : Date.now();
+
+          next.set(chart.chartId, {
+            chartId: chart.chartId,
+            config: chart.config,
+            timestamp,
+          });
+        }
+
+        if (prev.size === next.size) {
+          let unchanged = true;
+          for (const [id, nextChart] of next.entries()) {
+            const existing = prev.get(id);
+            if (!existing) {
+              unchanged = false;
+              break;
+            }
+
+            if (
+              existing.timestamp !== nextChart.timestamp ||
+              JSON.stringify(existing.config) !== JSON.stringify(nextChart.config)
+            ) {
+              unchanged = false;
+              break;
+            }
+          }
+
+          if (unchanged) {
+            return prev;
+          }
+        }
+
+        return next;
+      });
+
+      setConnectionStatus("connected");
+    } catch (error) {
+      console.error("[DynamicCharts] Failed to fetch charts:", error);
+      setConnectionStatus("disconnected");
+    } finally {
+      isFetchingRef.current = false;
+    }
+  }, [sessionId]);
+
+  // Poll chart data periodically
+  useEffect(() => {
+    if (!mounted) {
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+      setConnectionStatus("disconnected");
+      return;
+    }
+
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+
+    const sessionChanged = previousSessionIdRef.current !== sessionId;
+    if (sessionChanged) {
+      previousSessionIdRef.current = sessionId ?? null;
+      isFetchingRef.current = false;
+      setCharts((prev) => (prev.size === 0 ? prev : new Map<string, ChartState>()));
+    }
+
+    let isActive = true;
+
+    const pollCharts = async function poll() {
+      if (!isActive) return;
+
+      setConnectionStatus((status) =>
+        status === "connected" ? status : "connecting"
+      );
+
+      await fetchCharts();
+
+      if (!isActive) return;
+
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+      }
+
+      pollTimeoutRef.current = setTimeout(() => {
+        void poll();
+      }, CHART_POLL_INTERVAL_MS);
     };
 
-    es.onerror = (err) => {
-      console.error("[DynamicCharts] EventSource error:", err);
-      setConnectionStatus("disconnected");
-      es.close();
-    };
+    void pollCharts();
 
     return () => {
-      es.close();
-      sourceRef.current = null;
+      isActive = false;
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+      isFetchingRef.current = false;
     };
-  }, [mounted, sessionId]);
+  }, [fetchCharts, mounted, sessionId]);
 
   if (!mounted) return null;
 
@@ -321,7 +358,12 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
 
     // Merge any additional options (but after legend handling)
     if (config.options) {
-      const { legend, tooltip, grid, xAxis, yAxis, ...otherOptions } = config.options;
+      const otherOptions = { ...config.options };
+      delete otherOptions.legend;
+      delete otherOptions.tooltip;
+      delete otherOptions.grid;
+      delete otherOptions.xAxis;
+      delete otherOptions.yAxis;
       Object.assign(option, otherOptions);
     }
 

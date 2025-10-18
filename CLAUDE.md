@@ -78,7 +78,6 @@ LAMBDA_FUNCTION_URL=<lambda-url>            # AWS Lambda function URL
 CLAUDE_MODEL=claude-3-5-sonnet-20241022     # Claude model to use
 CHAT_FETCH_TIMEOUT_MS=30000                 # Overall timeout for Lambda requests
 CHAT_IDLE_TIMEOUT_MS=20000                  # Idle timeout for streaming
-NEXT_PUBLIC_WS_URL=<websocket-url>          # WebSocket URL for real-time updates
 WEBHOOK_SECRET=<secret>                     # Secret for webhook/manifest authentication
 CHART_WEBHOOK_SECRET=<secret>               # Optional: separate secret for chart webhooks (falls back to WEBHOOK_SECRET)
 ```

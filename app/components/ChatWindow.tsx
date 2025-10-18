@@ -14,6 +14,15 @@ interface Message {
   content: string;
 }
 
+const WEBHOOK_POLL_INTERVAL_MS = 5000;
+
+interface WebhookApiMessage {
+  id: string;
+  content: string;
+  timestamp: number;
+  sessionId?: string;
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -40,9 +49,11 @@ export default function ChatWindow() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const attemptRef = useRef(0);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFetchingRef = useRef(false);
+  const lastMessageTimestampRef = useRef(0);
+  const receivedMessageIdsRef = useRef<Set<string>>(new Set());
+  const previousSessionIdRef = useRef<string | null>(null);
 
   // --------------------------------------------------------------------------
   // Effects
@@ -66,155 +77,136 @@ export default function ChatWindow() {
     }
   }, [input]);
 
-  // Subscribe to webhook messages via SSE when chat is open
-  useEffect(() => {
-    if (!isOpen) {
-      setConnectionStatus("disconnected");
-      attemptRef.current = 0;
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
+  const fetchWebhookMessages = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
+    try {
+      const params = new URLSearchParams();
+      if (sessionId) params.set("sessionId", sessionId);
+      const since = lastMessageTimestampRef.current;
+      if (since > 0) params.set("since", String(since));
+      const query = params.toString();
+      const url = `/api/webhook${query ? `?${query}` : ""}`;
+
+      const response = await fetch(url, { method: "GET", cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch webhook messages (${response.status})`);
       }
-      sourceRef.current?.close();
-      sourceRef.current = null;
+
+      const data = (await response.json()) as { messages?: WebhookApiMessage[] };
+      const incoming = Array.isArray(data.messages) ? data.messages : [];
+
+      let maxTimestamp = lastMessageTimestampRef.current;
+      const newEntries: WebhookApiMessage[] = [];
+
+      for (const message of incoming) {
+        if (!message || typeof message.content !== "string") continue;
+
+        const timestamp =
+          typeof message.timestamp === "number" ? message.timestamp : Date.now();
+        maxTimestamp = Math.max(maxTimestamp, timestamp);
+
+        const candidateId =
+          typeof message.id === "string" && message.id.trim().length > 0
+            ? message.id
+            : `${timestamp}:${message.content}`;
+
+        if (receivedMessageIdsRef.current.has(candidateId)) {
+          continue;
+        }
+
+        receivedMessageIdsRef.current.add(candidateId);
+
+        newEntries.push({
+          id: candidateId,
+          content: message.content,
+          timestamp,
+          sessionId: message.sessionId,
+        });
+      }
+
+      if (newEntries.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          ...newEntries.map((entry) => ({
+            role: "assistant" as const,
+            content: entry.content,
+          })),
+        ]);
+      }
+
+      lastMessageTimestampRef.current = maxTimestamp;
+      setConnectionStatus("connected");
+    } catch (error) {
+      console.error("Failed to fetch webhook messages", error);
+      setConnectionStatus("disconnected");
+    } finally {
+      isFetchingRef.current = false;
+    }
+  }, [sessionId]);
+
+  // Poll webhook messages when chat is open
+  useEffect(() => {
+    const sessionChanged = previousSessionIdRef.current !== sessionId;
+    if (sessionChanged) {
+      previousSessionIdRef.current = sessionId ?? null;
+      receivedMessageIdsRef.current.clear();
+      lastMessageTimestampRef.current = 0;
+    }
+
+    if (!isOpen) {
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+      isFetchingRef.current = false;
+      setConnectionStatus("disconnected");
       return;
     }
 
     let isActive = true;
-    setConnectionStatus("connecting");
 
-    const scheduleReconnect = () => {
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+
+    setConnectionStatus((status) =>
+      status === "connected" ? status : "connecting"
+    );
+
+    const pollWebhook = async function poll() {
       if (!isActive) return;
-      const attempt = attemptRef.current + 1;
-      attemptRef.current = attempt;
-      const delay = Math.min(1500 * attempt, 15000); // linear backoff up to 15s
-      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = setTimeout(() => {
-        retryTimeoutRef.current = null;
-        connect();
-      }, delay);
-    };
 
-    const appendToAssistant = (delta: string) => {
-      if (!delta) return;
-      setMessages(prev => {
-        if (prev.length === 0 || prev[prev.length - 1].role !== "assistant") {
-          return [...prev, { role: "assistant", content: delta }];
-        }
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: "assistant",
-          content: updated[updated.length - 1].content + delta,
-        };
-        return updated;
-      });
-    };
+      setConnectionStatus((status) =>
+        status === "connected" ? status : "connecting"
+      );
 
-    const pushAssistantMessage = (text: string) => {
-      if (!text) return;
-      setMessages(prev => [...prev, { role: "assistant", content: text }]);
-    };
+      await fetchWebhookMessages();
 
-    const connect = () => {
       if (!isActive) return;
-      sourceRef.current?.close();
-      const streamUrl = `/api/webhook/stream?sessionId=${encodeURIComponent(sessionId)}`;
-      console.log("[ChatWindow] Connecting to SSE stream:", streamUrl);
-      const es = new EventSource(streamUrl);
-      sourceRef.current = es;
 
-      es.onopen = () => {
-        console.log("[ChatWindow] SSE connection opened");
-        attemptRef.current = 0;
-        setConnectionStatus("connected");
-      };
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+      }
 
-      es.onmessage = (event) => {
-        try {
-          console.log("[ChatWindow] SSE message received:", event.data);
-          const payload = JSON.parse(event.data);
-          console.log("[ChatWindow] Parsed payload:", payload);
-
-          // Ignore keepalives
-          if (payload?.type === "connected" || payload?.type === "ping") {
-            console.log("[ChatWindow] Ignoring keepalive:", payload.type);
-            return;
-          }
-
-          // Streaming chunks: append delta to the current assistant bubble
-          if (payload?.type === "chunk") {
-            console.log("[ChatWindow] Processing chunk:", payload);
-            const delta: string =
-              typeof payload.delta === "string"
-                ? payload.delta
-                : typeof payload.text === "string"
-                ? payload.text
-                : typeof payload.message === "string"
-                ? payload.message
-                : "";
-            if (delta) {
-              console.log("[ChatWindow] Appending delta:", delta);
-              appendToAssistant(delta);
-            }
-            return;
-          }
-
-          // Stream finished
-          if (payload?.type === "done") {
-            console.log("[ChatWindow] Stream done");
-            return; // bubble already contains final text
-          }
-
-          // Non-stream, full message from webhook
-          if (payload?.type === "webhook_message") {
-            console.log("[ChatWindow] Processing webhook_message:", payload);
-            const content: string =
-              typeof payload.content === "string"
-                ? payload.content
-                : typeof payload.message === "string"
-                ? payload.message
-                : JSON.stringify(payload);
-            console.log("[ChatWindow] Pushing assistant message:", content);
-            pushAssistantMessage(content);
-            return;
-          }
-
-          // Fallbacks: accept plain strings or common fields
-          console.log("[ChatWindow] Using fallback handler for payload:", payload);
-          const maybeText: string =
-            typeof payload === "string"
-              ? payload
-              : payload?.text ?? payload?.message ?? JSON.stringify(payload);
-
-          console.log("[ChatWindow] Fallback text:", maybeText);
-          pushAssistantMessage(String(maybeText));
-        } catch (err) {
-          console.error("[ChatWindow] Failed to parse SSE message", err, "raw data:", event.data);
-          pushAssistantMessage(event.data);
-        }
-      };
-
-      es.onerror = (err) => {
-        console.error("EventSource error:", err);
-        setConnectionStatus("disconnected");
-        es.close();
-        sourceRef.current = null;
-        scheduleReconnect();
-      };
+      pollTimeoutRef.current = setTimeout(() => {
+        void poll();
+      }, WEBHOOK_POLL_INTERVAL_MS);
     };
 
-    connect();
+    void pollWebhook();
 
     return () => {
       isActive = false;
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
       }
-      sourceRef.current?.close();
-      sourceRef.current = null;
+      isFetchingRef.current = false;
     };
-  }, [isOpen, sessionId]);
+  }, [fetchWebhookMessages, isOpen, sessionId]);
 
   // --------------------------------------------------------------------------
   // Handlers
@@ -382,13 +374,14 @@ export default function ChatWindow() {
     setMessages([]);
     setInput("");
     setConnectionStatus("disconnected");
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
     }
-    sourceRef.current?.close();
-    sourceRef.current = null;
-    attemptRef.current = 0;
+    isFetchingRef.current = false;
+    lastMessageTimestampRef.current = 0;
+    receivedMessageIdsRef.current.clear();
+    previousSessionIdRef.current = null;
     resetSession();
   }, [resetSession]);
 
