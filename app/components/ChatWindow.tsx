@@ -43,6 +43,7 @@ export default function ChatWindow() {
   const sourceRef = useRef<EventSource | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef(0);
+  const webhookMessageIdsRef = useRef<Set<string>>(new Set());
 
   // --------------------------------------------------------------------------
   // Effects
@@ -167,6 +168,17 @@ export default function ChatWindow() {
 
           // Non-stream, full message from webhook
           if (payload?.type === "webhook_message") {
+            const identifier =
+              typeof payload.id === "string" && payload.id.trim().length > 0
+                ? payload.id
+                : undefined;
+            if (identifier) {
+              if (webhookMessageIdsRef.current.has(identifier)) {
+                console.log("[ChatWindow] Skipping duplicate webhook message:", identifier);
+                return;
+              }
+              webhookMessageIdsRef.current.add(identifier);
+            }
             console.log("[ChatWindow] Processing webhook_message:", payload);
             const content: string =
               typeof payload.content === "string"
@@ -389,6 +401,7 @@ export default function ChatWindow() {
     sourceRef.current?.close();
     sourceRef.current = null;
     attemptRef.current = 0;
+    webhookMessageIdsRef.current.clear();
     resetSession();
   }, [resetSession]);
 
