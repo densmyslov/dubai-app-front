@@ -223,7 +223,6 @@ export default function ChatWindow() {
                 : typeof payload.message === "string"
                 ? payload.message
                 : JSON.stringify(payload);
-            console.log("[ChatWindow] Pushing assistant message:", content);
             pushAssistantMessage(content);
             lastWebhookContentRef.current = content;
             return;
