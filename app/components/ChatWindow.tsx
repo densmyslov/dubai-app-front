@@ -44,6 +44,8 @@ export default function ChatWindow() {
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef(0);
   const webhookMessageIdsRef = useRef<Set<string>>(new Set());
+  const webhookMessageIdQueueRef = useRef<string[]>([]);
+  const lastWebhookContentRef = useRef<string | null>(null);
 
   // --------------------------------------------------------------------------
   // Effects
@@ -168,17 +170,36 @@ export default function ChatWindow() {
 
           // Non-stream, full message from webhook
           if (payload?.type === "webhook_message") {
-            const identifier =
-              typeof payload.id === "string" && payload.id.trim().length > 0
+            const identifierSource =
+              payload?.id !== undefined && payload?.id !== null
                 ? payload.id
+                : payload?.timestamp !== undefined && payload?.timestamp !== null
+                ? payload.timestamp
                 : undefined;
+            const identifier =
+              identifierSource !== undefined
+                ? String(identifierSource)
+                : undefined;
+
             if (identifier) {
               if (webhookMessageIdsRef.current.has(identifier)) {
                 console.log("[ChatWindow] Skipping duplicate webhook message:", identifier);
                 return;
               }
+
               webhookMessageIdsRef.current.add(identifier);
+              webhookMessageIdQueueRef.current.push(identifier);
+              if (webhookMessageIdQueueRef.current.length > 200) {
+                const oldest = webhookMessageIdQueueRef.current.shift();
+                if (oldest) {
+                  webhookMessageIdsRef.current.delete(oldest);
+                }
+              }
+            } else if (payload?.isHistory && lastWebhookContentRef.current === payload?.content) {
+              console.log("[ChatWindow] Skipping duplicate webhook content without id");
+              return;
             }
+
             console.log("[ChatWindow] Processing webhook_message:", payload);
             const content: string =
               typeof payload.content === "string"
@@ -188,6 +209,7 @@ export default function ChatWindow() {
                 : JSON.stringify(payload);
             console.log("[ChatWindow] Pushing assistant message:", content);
             pushAssistantMessage(content);
+            lastWebhookContentRef.current = content;
             return;
           }
 
@@ -199,7 +221,13 @@ export default function ChatWindow() {
               : payload?.text ?? payload?.message ?? JSON.stringify(payload);
 
           console.log("[ChatWindow] Fallback text:", maybeText);
-          pushAssistantMessage(String(maybeText));
+          const text = String(maybeText);
+          if (!(payload?.isHistory && lastWebhookContentRef.current === text)) {
+            pushAssistantMessage(text);
+            lastWebhookContentRef.current = text;
+          } else {
+            console.log("[ChatWindow] Skipping duplicate fallback content");
+          }
         } catch (err) {
           console.error("[ChatWindow] Failed to parse SSE message", err, "raw data:", event.data);
           pushAssistantMessage(event.data);
@@ -402,6 +430,8 @@ export default function ChatWindow() {
     sourceRef.current = null;
     attemptRef.current = 0;
     webhookMessageIdsRef.current.clear();
+    webhookMessageIdQueueRef.current = [];
+    lastWebhookContentRef.current = null;
     resetSession();
   }, [resetSession]);
 
