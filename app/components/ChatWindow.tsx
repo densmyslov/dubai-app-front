@@ -115,7 +115,17 @@ export default function ChatWindow() {
 
     const pushAssistantMessage = (text: string) => {
       if (!text) return;
-      setMessages(prev => [...prev, { role: "assistant", content: text }]);
+      setMessages(prev => {
+        if (
+          prev.length > 0 &&
+          prev[prev.length - 1].role === "assistant" &&
+          prev[prev.length - 1].content === text
+        ) {
+          console.log("[ChatWindow] Skipping message because last assistant entry matches");
+          return prev;
+        }
+        return [...prev, { role: "assistant", content: text }];
+      });
     };
 
     const connect = () => {
@@ -170,6 +180,7 @@ export default function ChatWindow() {
 
           // Non-stream, full message from webhook
           if (payload?.type === "webhook_message") {
+            const isHistory = Boolean(payload?.isHistory);
             const identifierSource =
               payload?.id !== undefined && payload?.id !== null
                 ? payload.id
@@ -183,6 +194,11 @@ export default function ChatWindow() {
 
             if (identifier) {
               if (webhookMessageIdsRef.current.has(identifier)) {
+                if (!isHistory) {
+                  console.log("[ChatWindow] Duplicate live webhook id detected, skipping:", identifier);
+                } else {
+                  console.log("[ChatWindow] Skipping historical webhook id already seen:", identifier);
+                }
                 console.log("[ChatWindow] Skipping duplicate webhook message:", identifier);
                 return;
               }
@@ -195,8 +211,8 @@ export default function ChatWindow() {
                   webhookMessageIdsRef.current.delete(oldest);
                 }
               }
-            } else if (payload?.isHistory && lastWebhookContentRef.current === payload?.content) {
-              console.log("[ChatWindow] Skipping duplicate webhook content without id");
+            } else if (isHistory && lastWebhookContentRef.current === payload?.content) {
+              console.log("[ChatWindow] Skipping duplicate historical webhook content without id");
               return;
             }
 
@@ -222,11 +238,12 @@ export default function ChatWindow() {
 
           console.log("[ChatWindow] Fallback text:", maybeText);
           const text = String(maybeText);
-          if (!(payload?.isHistory && lastWebhookContentRef.current === text)) {
+          const isHistoryMessage = Boolean(payload?.isHistory);
+          if (!(isHistoryMessage && lastWebhookContentRef.current === text)) {
             pushAssistantMessage(text);
             lastWebhookContentRef.current = text;
           } else {
-            console.log("[ChatWindow] Skipping duplicate fallback content");
+            console.log("[ChatWindow] Skipping duplicate historical fallback content");
           }
         } catch (err) {
           console.error("[ChatWindow] Failed to parse SSE message", err, "raw data:", event.data);
