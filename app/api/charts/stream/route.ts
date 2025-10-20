@@ -129,45 +129,10 @@ export async function GET(request: NextRequest) {
 				}
 			}, 30_000);
 
-			const poller = kv
-				? setInterval(async () => {
-					try {
-						const latest = await getRecentChartsFromKV(kv, 20, sessionId);
-						const newMessages = latest.filter((message) => message.timestamp > lastTimestamp);
-
-						if (newMessages.length === 0) {
-							return;
-						}
-
-						newMessages.sort((a, b) => a.timestamp - b.timestamp);
-						for (const message of newMessages) {
-							lastTimestamp = Math.max(lastTimestamp, message.timestamp);
-							console.log('[charts/stream] Polling detected new KV chart:', message.chartId);
-							controller.enqueue(
-								encoder.encode(
-									`data: ${JSON.stringify({
-										type: message.type,
-										chartId: message.chartId,
-										config: message.config,
-										timestamp: message.timestamp,
-										isHistory: false,
-									})}\n\n`
-								)
-							);
-						}
-					} catch (error) {
-						console.error('[charts/stream] KV poll failed:', error);
-					}
-				}, 5_000)
-				: null;
-
 			// Cleanup on disconnect
 			request.signal.addEventListener('abort', () => {
 				clearInterval(heartbeat);
 				unsubscribe();
-				if (poller) {
-					clearInterval(poller);
-				}
 				controller.close();
 			});
 		},

@@ -94,42 +94,9 @@ export async function GET(request: NextRequest) {
 				}
 			}, 30_000);
 
-			const poller = kv
-				? setInterval(async () => {
-					try {
-						const latest = await getRecentMessagesFromKV(kv, 20, sessionId);
-						const newMessages = latest.filter((message) => message.timestamp > lastTimestamp);
-
-						if (newMessages.length === 0) {
-							return;
-						}
-
-						newMessages.sort((a, b) => a.timestamp - b.timestamp);
-						for (const message of newMessages) {
-							lastTimestamp = Math.max(lastTimestamp, message.timestamp);
-							controller.enqueue(
-								encoder.encode(
-									`data: ${JSON.stringify({
-										type: 'webhook_message',
-										id: message.id,
-										content: message.content,
-										timestamp: message.timestamp,
-									})}\n\n`
-								)
-							);
-						}
-					} catch (error) {
-						console.error('KV poll failed:', error);
-					}
-				}, 5_000)
-				: null;
-
 			request.signal.addEventListener('abort', () => {
 				clearInterval(heartbeat);
 				unsubscribe();
-				if (poller) {
-					clearInterval(poller);
-				}
 				controller.close();
 			});
 		},
