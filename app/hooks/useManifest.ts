@@ -3,8 +3,6 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Manifest } from '../lib/manifest';
 import { DEFAULT_MANIFEST } from '../lib/manifest';
 
-const POLL_INTERVAL = 5000; // Poll every 5 seconds
-
 export function useManifest() {
   const [manifest, setManifest] = useState<Manifest>(DEFAULT_MANIFEST);
   const [loading, setLoading] = useState(true);
@@ -36,14 +34,10 @@ export function useManifest() {
   }, []);
 
   useEffect(() => {
-    // Initial fetch
+    // Fetch manifest only on page load
     fetchManifest();
 
-    // Set up polling
-    const intervalId = setInterval(fetchManifest, POLL_INTERVAL);
-
-    // Cleanup
-    return () => clearInterval(intervalId);
+    // No polling - only fetch once on mount
   }, [fetchManifest]);
 
   return { manifest, loading, error, refetch: fetchManifest };
