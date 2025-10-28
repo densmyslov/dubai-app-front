@@ -113,10 +113,12 @@ export default function ChatWindow() {
       });
     };
 
-    const pushAssistantMessage = (text: string) => {
+    const pushAssistantMessage = (text: string, options?: { skipIfMatching?: boolean }) => {
       if (!text) return;
+      const skipIfMatching = options?.skipIfMatching ?? true;
       setMessages(prev => {
         if (
+          skipIfMatching &&
           prev.length > 0 &&
           prev[prev.length - 1].role === "assistant" &&
           prev[prev.length - 1].content === text
@@ -187,7 +189,9 @@ export default function ChatWindow() {
                 ? payload.message
                 : JSON.stringify(payload);
 
-            pushAssistantMessage(content);
+            console.log("[ChatWindow] Inserting webhook_message content:", content);
+            pushAssistantMessage(content, { skipIfMatching: false });
+            lastWebhookContentRef.current = content;
             return;
           }
 
