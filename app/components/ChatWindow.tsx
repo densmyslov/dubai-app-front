@@ -126,7 +126,7 @@ export default function ChatWindow() {
           console.log("[ChatWindow] Skipping message because last assistant entry matches");
           return prev;
         }
-        const next = [...prev, { role: "assistant", content: text }];
+        const next: Message[] = [...prev, { role: "assistant" as const, content: text }];
         console.log("[ChatWindow] Appended assistant message. Previous length:", prev.length, "New length:", next.length);
         return next;
       });
