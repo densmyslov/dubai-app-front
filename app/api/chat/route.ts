@@ -207,11 +207,19 @@ export async function POST(request: NextRequest) {
                 controller.enqueue(encoder.encode(modified));
 
                 // Debug log
-                console.log('Injected metadata:', {
-                  query_id: queryId,
-                  user_id: userId,
-                  type: parsed.type,
-                });
+                if (parsed.type === 'chunk') {
+                  const textValue = typeof parsed.text === 'string' ? parsed.text : '';
+                  console.log('Chunk forwarded:', {
+                    query_id: queryId,
+                    text_length: textValue.length,
+                    text_preview: textValue.substring(0, 50),
+                  });
+                } else {
+                  console.log('Event forwarded:', {
+                    query_id: queryId,
+                    type: parsed.type,
+                  });
+                }
               } catch {
                         controller.enqueue(encoder.encode('data: ' + dataPayload + '\n\n'));
                       }
