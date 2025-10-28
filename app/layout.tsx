@@ -6,8 +6,11 @@ import LayoutContent from './components/LayoutContent';
 
 export const metadata = {
   title: 'Dubai RE Investor Dashboard',
-  description: 'Investor KPIs for Dubai real estate'
-};
+  description: 'Investor KPIs for Dubai real estate',
+  icons: {
+    icon: '/favicon.ico',
+  }
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

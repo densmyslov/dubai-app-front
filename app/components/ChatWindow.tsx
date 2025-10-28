@@ -180,51 +180,14 @@ export default function ChatWindow() {
 
           // Non-stream, full message from webhook
           if (payload?.type === "webhook_message") {
-            const isHistory = Boolean(payload?.isHistory);
-            const identifierSource =
-              payload?.id !== undefined && payload?.id !== null
-                ? payload.id
-                : payload?.timestamp !== undefined && payload?.timestamp !== null
-                ? payload.timestamp
-                : undefined;
-            const identifier =
-              identifierSource !== undefined
-                ? String(identifierSource)
-                : undefined;
-
-            if (identifier) {
-              if (webhookMessageIdsRef.current.has(identifier)) {
-                if (!isHistory) {
-                  console.log("[ChatWindow] Duplicate live webhook id detected, skipping:", identifier);
-                } else {
-                  console.log("[ChatWindow] Skipping historical webhook id already seen:", identifier);
-                }
-                console.log("[ChatWindow] Skipping duplicate webhook message:", identifier);
-                return;
-              }
-
-              webhookMessageIdsRef.current.add(identifier);
-              webhookMessageIdQueueRef.current.push(identifier);
-              if (webhookMessageIdQueueRef.current.length > 200) {
-                const oldest = webhookMessageIdQueueRef.current.shift();
-                if (oldest) {
-                  webhookMessageIdsRef.current.delete(oldest);
-                }
-              }
-            } else if (isHistory && lastWebhookContentRef.current === payload?.content) {
-              console.log("[ChatWindow] Skipping duplicate historical webhook content without id");
-              return;
-            }
-
-            console.log("[ChatWindow] Processing webhook_message:", payload);
             const content: string =
               typeof payload.content === "string"
                 ? payload.content
                 : typeof payload.message === "string"
                 ? payload.message
                 : JSON.stringify(payload);
+
             pushAssistantMessage(content);
-            lastWebhookContentRef.current = content;
             return;
           }
 
