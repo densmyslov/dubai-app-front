@@ -60,6 +60,9 @@ export default function ChatWindow() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+  useEffect(() => {
+    console.log("[ChatWindow] Messages state updated:", messages);
+  }, [messages]);
 
   // Auto-resize textarea based on input content
   useEffect(() => {
