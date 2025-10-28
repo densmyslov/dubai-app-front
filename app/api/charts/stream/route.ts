@@ -20,8 +20,16 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
 	const sessionId = request.nextUrl.searchParams.get('sessionId') || undefined;
-	const env = getRequestContext().env as Record<string, unknown>;
-	const kv = env.CHART_KV as KVNamespace | undefined;
+
+	// Try to get Cloudflare KV (only available in production/Cloudflare Pages)
+	let kv: KVNamespace | undefined;
+	try {
+		const env = getRequestContext().env as Record<string, unknown>;
+		kv = env.CHART_KV as KVNamespace | undefined;
+	} catch (error) {
+		// Local dev: Cloudflare context not available, use in-memory queue only
+		console.log('[charts/stream] Running in local dev mode (no KV)');
+	}
 
 	console.log('[charts/stream] Connection request with sessionId:', sessionId);
 	console.log('[charts/stream] CHART_KV available:', !!kv);

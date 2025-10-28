@@ -12,8 +12,15 @@ const MANIFEST_KEY = 'dashboard:manifest';
 // ============================================================================
 export async function GET() {
 	try {
-		const env = getRequestContext().env as Record<string, unknown>;
-		const kv = env.MANIFEST_KV as KVNamespace | undefined;
+		// Try to get Cloudflare KV (only available in production/Cloudflare Pages)
+		let kv: KVNamespace | undefined;
+		try {
+			const env = getRequestContext().env as Record<string, unknown>;
+			kv = env.MANIFEST_KV as KVNamespace | undefined;
+		} catch (error) {
+			// Local dev: Cloudflare context not available, return default manifest
+			console.log('[manifest] Running in local dev mode (no KV), returning default');
+		}
 
 		if (!kv) {
 			console.warn('[manifest] MANIFEST_KV not available, returning default manifest');

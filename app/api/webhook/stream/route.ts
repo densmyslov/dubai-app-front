@@ -18,8 +18,17 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
 	const sessionId = request.nextUrl.searchParams.get('sessionId') || undefined;
-	const env = getRequestContext().env as Record<string, unknown>;
-	const kv = env.WEBHOOK_KV as KVNamespace | undefined;
+
+	// Try to get Cloudflare KV (only available in production/Cloudflare Pages)
+	let kv: KVNamespace | undefined;
+	try {
+		const env = getRequestContext().env as Record<string, unknown>;
+		kv = env.WEBHOOK_KV as KVNamespace | undefined;
+	} catch (error) {
+		// Local dev: Cloudflare context not available, use in-memory queue only
+		console.log('[webhook/stream] Running in local dev mode (no KV)');
+	}
+
 	const recentFromKV = kv ? await getRecentMessagesFromKV(kv, 20, sessionId) : [];
 
 	const stream = new ReadableStream<Uint8Array>({
