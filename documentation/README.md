@@ -81,7 +81,7 @@ The chat window can receive real-time messages from external services via webhoo
    curl -X POST https://your-app.com/api/webhook \
      -H "Content-Type: application/json" \
      -H "X-Webhook-Secret: your-secret-key" \
-     -d '{"message": "Hello from external service!"}'
+     -d '{"message": "Hello, I am your Dubai real estate research assistant. What can I do for you today?"}'
    ```
 
 3. **Messages appear instantly** in the chat window with a purple "Webhook" badge

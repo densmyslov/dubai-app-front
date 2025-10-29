@@ -94,7 +94,7 @@ X-Webhook-Secret: your-secret-key-here  # Optional, only if WEBHOOK_SECRET is se
 curl -X POST https://your-app.com/api/webhook \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Secret: your-secret-key-here" \
-  -d '{"message": "Hello from external service!"}'
+  -d '{"message": "Hello, I am your Dubai real estate research assistant. What can I do for you today?"}'
 ```
 
 ### 7. Verify the SSE stream
