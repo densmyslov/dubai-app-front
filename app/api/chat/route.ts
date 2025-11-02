@@ -8,6 +8,18 @@ interface Message {
   content: string;
 }
 
+function dedupeConsecutiveMessages(messages: Message[]): Message[] {
+  const result: Message[] = [];
+  let lastKey: string | null = null;
+  for (const msg of messages) {
+    const key = `${msg.role}:${msg.content}`;
+    if (key === lastKey) continue;
+    result.push(msg);
+    lastKey = key;
+  }
+  return result;
+}
+
 const FETCH_TIMEOUT_MS = Number(process.env.CHAT_FETCH_TIMEOUT_MS ?? 30_000);
 
 async function getApiAuthToken(): Promise<string | null> {
@@ -55,6 +67,7 @@ export async function POST(request: NextRequest) {
       return new Response('Invalid request: message or messages required', { status: 400 });
     }
 
+    conversationHistory = dedupeConsecutiveMessages(conversationHistory);
     console.log(`Processing: ${conversationHistory.length} history messages + 1 new message`);
 
     // Set user_id
