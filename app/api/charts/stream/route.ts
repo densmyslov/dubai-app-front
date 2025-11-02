@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
 			let lastTimestamp = recentFromKV.length
 				? recentFromKV[recentFromKV.length - 1]?.timestamp ?? 0
 				: 0;
+			const deliveredIds = new Set<string>();
 
 			// Immediately confirm connection
 			controller.enqueue(
@@ -69,6 +70,8 @@ export async function GET(request: NextRequest) {
 
 				console.log('[charts/stream] Delivering chart from KV:', message.chartId);
 				controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+				deliveredIds.add(message.id);
+				lastTimestamp = Math.max(lastTimestamp, message.timestamp);
 			}
 
 			// Also check in-memory queue for recent charts (only if KV is not available)
@@ -89,10 +92,48 @@ export async function GET(request: NextRequest) {
 
 						console.log('[charts/stream] Delivering chart from memory:', message.chartId, 'sessionId:', message.sessionId);
 						controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+						deliveredIds.add(message.id);
+						lastTimestamp = Math.max(lastTimestamp, message.timestamp);
 					}
 				}
 			} else {
 				console.log('[charts/stream] KV available, skipping in-memory queue to ensure session isolation');
+			}
+
+			let kvPollInterval: ReturnType<typeof setInterval> | undefined;
+			if (kv) {
+				const pollKvForUpdates = async () => {
+					try {
+						const latest = await getRecentChartsFromKV(kv, 20, sessionId);
+						for (const message of latest) {
+							if (deliveredIds.has(message.id)) {
+								continue;
+							}
+							if (sessionId ? message.sessionId !== sessionId : !!message.sessionId) {
+								continue;
+							}
+
+							const payload = {
+								type: message.type,
+								chartId: message.chartId,
+								config: message.config,
+								timestamp: message.timestamp,
+							};
+
+							console.log('[charts/stream] Delivering chart from KV poll:', message.chartId);
+							controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+							deliveredIds.add(message.id);
+							lastTimestamp = Math.max(lastTimestamp, message.timestamp);
+						}
+					} catch (error) {
+						console.error('[charts/stream] Failed to poll KV for updates:', error);
+					}
+				};
+
+				void pollKvForUpdates();
+				kvPollInterval = setInterval(() => {
+					void pollKvForUpdates();
+				}, 5_000);
 			}
 
 			// Subscribe to new chart messages
@@ -116,6 +157,11 @@ export async function GET(request: NextRequest) {
 					return;
 				}
 
+				if (deliveredIds.has(message.id)) {
+					console.log('[charts/stream] Skipping already delivered message:', message.id);
+					return;
+				}
+
 				const payload = {
 					type: message.type,
 					chartId: message.chartId,
@@ -126,6 +172,7 @@ export async function GET(request: NextRequest) {
 				console.log('[charts/stream] Delivering chart message to client:', message.chartId);
 				controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 				lastTimestamp = Math.max(lastTimestamp, message.timestamp);
+				deliveredIds.add(message.id);
 			});
 
 			// Heartbeat keeps connection alive
@@ -140,6 +187,10 @@ export async function GET(request: NextRequest) {
 			// Cleanup on disconnect
 			request.signal.addEventListener('abort', () => {
 				clearInterval(heartbeat);
+				if (kvPollInterval) {
+					clearInterval(kvPollInterval);
+					kvPollInterval = undefined;
+				}
 				unsubscribe();
 				controller.close();
 			});
