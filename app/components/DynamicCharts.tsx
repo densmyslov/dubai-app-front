@@ -29,6 +29,8 @@ const DynamicCharts: React.FC = () => {
   >("disconnected");
   const [mounted, setMounted] = useState(false);
   const sourceRef = useRef<EventSource | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attemptRef = useRef(0);
 
   // Delete chart handler
   const handleDeleteChart = async (chartId: string) => {
@@ -76,101 +78,136 @@ const DynamicCharts: React.FC = () => {
   useEffect(() => {
     if (!mounted) return;
 
-    setConnectionStatus("connecting");
+    let isActive = true;
 
-    const streamUrl = `/api/charts/stream${
-      sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""
-    }`;
-    console.log("[DynamicCharts] Connecting to chart stream:", streamUrl);
-
-    const es = new EventSource(streamUrl);
-    sourceRef.current = es;
-
-    es.onopen = () => {
-      console.log("[DynamicCharts] Chart stream connection opened");
-      setConnectionStatus("connected");
-    };
-
-    es.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        console.log("[DynamicCharts] Received payload:", payload);
-
-        // Ignore keepalives and connection confirmations
-        if (payload?.type === "connected" || payload?.type === "ping") {
-          return;
-        }
-
-        // Handle chart messages
-        if (payload?.type === "chart" || payload?.type === "chart_update") {
-          const { chartId, config, isHistory } = payload;
-
-          if (!chartId || !config) {
-            console.warn("[DynamicCharts] Invalid chart payload:", payload);
-            return;
-          }
-
-          console.log(
-            `[DynamicCharts] ${isHistory ? "Loading" : "Adding/updating"} chart:`,
-            chartId
-          );
-
-          setCharts((prev) => {
-            const existing = prev.get(chartId);
-
-            // Check if chart data actually changed (deep comparison)
-            if (existing && JSON.stringify(existing.config) === JSON.stringify(config)) {
-              console.log("[DynamicCharts] Chart", chartId, "unchanged, skipping update");
-              return prev; // Return same reference to prevent re-render
-            }
-
-            const updated = new Map(prev);
-            updated.set(chartId, {
-              chartId,
-              config,
-              timestamp: payload.timestamp || Date.now(),
-            });
-            console.log("[DynamicCharts] Charts state updated. Total charts:", updated.size);
-            console.log("[DynamicCharts] Chart IDs:", Array.from(updated.keys()));
-            if (isHistory) {
-              console.log("[DynamicCharts] Chart", chartId, "loaded from history (likely KV)");
-            } else {
-              console.log("[DynamicCharts] Chart", chartId, "received live from SSE");
-            }
-            return updated;
-          });
-        } else if (payload?.type === "chart_remove") {
-          const { chartId } = payload;
-
-          if (!chartId) {
-            console.warn("[DynamicCharts] Invalid chart removal payload:", payload);
-            return;
-          }
-
-          console.log("[DynamicCharts] Removing chart:", chartId);
-
-          setCharts((prev) => {
-            const updated = new Map(prev);
-            updated.delete(chartId);
-            return updated;
-          });
-        } else {
-          // Log unhandled types for debugging
-          console.warn("[DynamicCharts] Unhandled payload type:", payload?.type, "Full payload:", payload);
-        }
-      } catch (err) {
-        console.error("[DynamicCharts] Failed to parse SSE message", err, event.data);
+    const clearRetryTimer = () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     };
 
-    es.onerror = (err) => {
-      console.error("[DynamicCharts] EventSource error:", err);
-      setConnectionStatus("disconnected");
-      es.close();
+    const scheduleReconnect = () => {
+      if (!isActive) return;
+      const attempt = attemptRef.current + 1;
+      attemptRef.current = attempt;
+      const delay = Math.min(1500 * attempt, 15000); // linear backoff, cap at 15s
+      console.warn("[DynamicCharts] Scheduling reconnect in", delay, "ms (attempt", attempt, ")");
+      clearRetryTimer();
+      retryTimeoutRef.current = setTimeout(() => {
+        retryTimeoutRef.current = null;
+        connect();
+      }, delay);
     };
 
+    const connect = () => {
+      if (!isActive) return;
+      clearRetryTimer();
+
+      setConnectionStatus("connecting");
+
+      const streamUrl = `/api/charts/stream${
+        sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""
+      }`;
+      console.log("[DynamicCharts] Connecting to chart stream:", streamUrl);
+
+      sourceRef.current?.close();
+      const es = new EventSource(streamUrl);
+      sourceRef.current = es;
+
+      es.onopen = () => {
+        console.log("[DynamicCharts] Chart stream connection opened");
+        attemptRef.current = 0;
+        setConnectionStatus("connected");
+      };
+
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          console.log("[DynamicCharts] Received payload:", payload);
+
+          // Ignore keepalives and connection confirmations
+          if (payload?.type === "connected" || payload?.type === "ping") {
+            return;
+          }
+
+          // Handle chart messages
+          if (payload?.type === "chart" || payload?.type === "chart_update") {
+            const { chartId, config, isHistory } = payload;
+
+            if (!chartId || !config) {
+              console.warn("[DynamicCharts] Invalid chart payload:", payload);
+              return;
+            }
+
+            console.log(
+              `[DynamicCharts] ${isHistory ? "Loading" : "Adding/updating"} chart:`,
+              chartId
+            );
+
+            setCharts((prev) => {
+              const existing = prev.get(chartId);
+
+              // Check if chart data actually changed (deep comparison)
+              if (existing && JSON.stringify(existing.config) === JSON.stringify(config)) {
+                console.log("[DynamicCharts] Chart", chartId, "unchanged, skipping update");
+                return prev; // Return same reference to prevent re-render
+              }
+
+              const updated = new Map(prev);
+              updated.set(chartId, {
+                chartId,
+                config,
+                timestamp: payload.timestamp || Date.now(),
+              });
+              console.log("[DynamicCharts] Charts state updated. Total charts:", updated.size);
+              console.log("[DynamicCharts] Chart IDs:", Array.from(updated.keys()));
+              if (isHistory) {
+                console.log("[DynamicCharts] Chart", chartId, "loaded from history (likely KV)");
+              } else {
+                console.log("[DynamicCharts] Chart", chartId, "received live from SSE");
+              }
+              return updated;
+            });
+          } else if (payload?.type === "chart_remove") {
+            const { chartId } = payload;
+
+            if (!chartId) {
+              console.warn("[DynamicCharts] Invalid chart removal payload:", payload);
+              return;
+            }
+
+            console.log("[DynamicCharts] Removing chart:", chartId);
+
+            setCharts((prev) => {
+              const updated = new Map(prev);
+              updated.delete(chartId);
+              return updated;
+            });
+          } else {
+            // Log unhandled types for debugging
+            console.warn("[DynamicCharts] Unhandled payload type:", payload?.type, "Full payload:", payload);
+          }
+        } catch (err) {
+          console.error("[DynamicCharts] Failed to parse SSE message", err, event.data);
+        }
+      };
+
+      es.onerror = (err) => {
+        console.error("[DynamicCharts] EventSource error:", err);
+        setConnectionStatus("disconnected");
+        es.close();
+        sourceRef.current = null;
+        scheduleReconnect();
+      };
+    };
+
+    connect();
+
     return () => {
-      es.close();
+      isActive = false;
+      clearRetryTimer();
+      sourceRef.current?.close();
       sourceRef.current = null;
     };
   }, [mounted, sessionId]);
