@@ -334,44 +334,33 @@ export default function ChatWindow() {
               console.log("Received metadata:", parsed.metadata);
             }
 
-            if (parsed.type === "chunk" && parsed.text) {
-              const text: string = parsed.text;
-              for (let i = 0; i < text.length; i++) {
+            if (parsed.type === "chunk") {
+              const textValue =
+                typeof parsed.text === "string"
+                  ? parsed.text
+                  : typeof parsed.delta === "string"
+                  ? parsed.delta
+                  : "";
+
+              if (textValue) {
                 if (signal.aborted) {
                   reader.cancel();
                   return;
                 }
 
-                assistantMessage += text[i];
+                assistantMessage += textValue;
                 setMessages(prev => {
                   const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    role: "assistant",
-                    content: assistantMessage,
-                  };
-                  return updated;
-                });
-
-                await new Promise<void>((resolve, reject) => {
-                  if (signal.aborted) {
-                    reject(new DOMException("Aborted", "AbortError"));
-                    return;
+                  const lastIndex = updated.length - 1;
+                  if (lastIndex >= 0 && updated[lastIndex].role === "assistant") {
+                    updated[lastIndex] = {
+                      role: "assistant",
+                      content: assistantMessage,
+                    };
+                  } else {
+                    updated.push({ role: "assistant", content: assistantMessage });
                   }
-                  const timeout = setTimeout(() => {
-                    if (signal.aborted) {
-                      reject(new DOMException("Aborted", "AbortError"));
-                    } else {
-                      resolve();
-                    }
-                  }, 20);
-                  signal.addEventListener(
-                    "abort",
-                    () => {
-                      clearTimeout(timeout);
-                      reject(new DOMException("Aborted", "AbortError"));
-                    },
-                    { once: true }
-                  );
+                  return updated;
                 });
               }
             } else if (parsed.type === "done") {

@@ -1,5 +1,6 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
 import type { WebhookMessage } from './messageQueue';
+import { normalizeWebhookContent } from './messageQueue';
 
 const STORAGE_KEY = 'webhook:messages';
 const MAX_STORED_MESSAGES = 100;
@@ -37,8 +38,14 @@ export async function getRecentMessagesFromKV(
 		: messages;
 
 	if (filtered.length <= limit) {
-		return filtered;
+		return filtered.map((message) => ({
+			...message,
+			content: normalizeWebhookContent(message.content),
+		}));
 	}
 
-	return filtered.slice(-limit);
+	return filtered.slice(-limit).map((message) => ({
+		...message,
+		content: normalizeWebhookContent(message.content),
+	}));
 }

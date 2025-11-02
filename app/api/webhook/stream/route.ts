@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import type { KVNamespace } from '@cloudflare/workers-types';
-import { messageQueue, type WebhookMessage } from '../../../lib/messageQueue';
+import { messageQueue, normalizeWebhookContent, type WebhookMessage } from '../../../lib/messageQueue';
 import { getRecentMessagesFromKV } from '../../../lib/webhookStorage';
 
 export const runtime = 'edge';
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 				const payload = {
 					type: 'webhook_message',
 					id: message.id,
-					content: message.content,
+					content: normalizeWebhookContent(message.content),
 					timestamp: message.timestamp,
 				};
 
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
 				const payload = {
 					type: 'webhook_message',
 					id: message.id,
-					content: message.content,
+					content: normalizeWebhookContent(message.content),
 					timestamp: message.timestamp,
 					isHistory: true,
 				};

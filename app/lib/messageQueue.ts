@@ -15,6 +15,13 @@ export interface WebhookMessage {
   sessionId?: string;
 }
 
+const LEGACY_EXTERNAL_GREETING = 'Hello from external service!';
+const DUBAI_AGENT_GREETING = 'Hello from Dubai real estate agent ! What can I do for you today ?';
+
+export function normalizeWebhookContent(content: string): string {
+  return content === LEGACY_EXTERNAL_GREETING ? DUBAI_AGENT_GREETING : content;
+}
+
 class MessageQueue {
   private messages: WebhookMessage[] = [];
   private listeners: Set<(message: WebhookMessage) => void> = new Set();
@@ -23,7 +30,7 @@ class MessageQueue {
   addMessage(content: string, sessionId?: string): WebhookMessage {
     const message: WebhookMessage = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-      content,
+      content: normalizeWebhookContent(content),
       timestamp: Date.now(),
       sessionId,
     };
@@ -52,7 +59,10 @@ class MessageQueue {
       );
     }
 
-    return messages.slice(-limit);
+    return messages.slice(-limit).map((message) => ({
+      ...message,
+      content: normalizeWebhookContent(message.content),
+    }));
   }
 
   clear(): void {
