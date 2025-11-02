@@ -177,7 +177,14 @@ const DynamicCharts: React.FC = () => {
 
   if (!mounted) return null;
 
-  const chartArray = Array.from(charts.values());
+  const chartArray = Array.from(charts.values()).sort(
+    (a, b) => b.timestamp - a.timestamp
+  );
+  const rows: ChartState[][] = [];
+  const columnsPerRow = 2;
+  for (let i = 0; i < chartArray.length; i += columnsPerRow) {
+    rows.push(chartArray.slice(i, i + columnsPerRow));
+  }
 
   console.log("[DynamicCharts] Render - mounted:", mounted, "charts:", chartArray.length);
 
@@ -215,14 +222,18 @@ const DynamicCharts: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {chartArray.map((chart) => (
-          <DynamicChart
-            key={chart.chartId}
-            chartId={chart.chartId}
-            config={chart.config}
-            onDelete={handleDeleteChart}
-          />
+      <div className="space-y-6">
+        {rows.map((rowCharts, rowIndex) => (
+          <div key={`chart-row-${rowIndex}`} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {rowCharts.map((chart) => (
+              <DynamicChart
+                key={chart.chartId}
+                chartId={chart.chartId}
+                config={chart.config}
+                onDelete={handleDeleteChart}
+              />
+            ))}
+          </div>
         ))}
       </div>
     </div>
