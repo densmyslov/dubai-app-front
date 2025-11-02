@@ -57,11 +57,10 @@ export async function POST(request: NextRequest) {
 
     console.log(`Processing: ${conversationHistory.length} history messages + 1 new message`);
 
-    // Generate query_id and set user_id
-    const queryId = crypto.randomUUID();
+    // Set user_id
     const userId = '0000';
 
-    console.log(`Query ID: ${queryId}, User ID: ${userId}`);
+    console.log(`User ID: ${userId}`);
 
     // headers + auth
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -98,10 +97,7 @@ export async function POST(request: NextRequest) {
         conversation_history: conversationHistory,
         stream: body.stream !== false, // default true
         max_tokens: resolvedMaxTokens,
-        metadata: {
-          query_id: queryId,
-          user_id: userId,
-        },
+        metadata: { user_id: userId },
       };
       const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : undefined;
       const chatUrl = typeof body.chatUrl === 'string' && body.chatUrl.trim() ? body.chatUrl.trim() : undefined;
@@ -212,11 +208,7 @@ export async function POST(request: NextRequest) {
               };
 
               // Inject metadata
-              parsed.metadata = {
-                ...(parsed.metadata ?? {}),
-                query_id: queryId,
-                user_id: userId,
-              };
+              parsed.metadata = { ...(parsed.metadata ?? {}), user_id: userId };
 
               const modified = 'data: ' + JSON.stringify(parsed) + '\n\n';
               controller.enqueue(encoder.encode(modified));
@@ -225,15 +217,12 @@ export async function POST(request: NextRequest) {
               if (parsed.type === 'chunk') {
                 const textValue = typeof parsed.text === 'string' ? parsed.text : '';
                 console.log('Chunk forwarded:', {
-                  query_id: queryId,
+                  user_id: userId,
                   text_length: textValue.length,
                   text_preview: textValue.substring(0, 50),
                 });
               } else {
-                console.log('Event forwarded:', {
-                  query_id: queryId,
-                  type: parsed.type,
-                });
+                console.log('Event forwarded:', { user_id: userId, type: parsed.type });
               }
             } catch (parseError) {
               console.error('[chat] Failed to parse SSE event:', parseError, 'payload:', dataPayload.substring(0, 100));
