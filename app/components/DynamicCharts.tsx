@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { useSession } from "../contexts/SessionContext";
 import type { ChartConfig } from "../lib/chartQueue";
+import { fetchAndParseCSV } from "../lib/csvParser";
 
 // ============================================================================
 // DynamicCharts Component
@@ -295,6 +296,9 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
   const chartRef = useRef<echarts.ECharts | null>(null);
   const [isDark, setIsDark] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [resolvedConfig, setResolvedConfig] = useState<ChartConfig>(config);
 
   // Debug: Log when component renders
   useEffect(() => {
@@ -315,6 +319,56 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
     return () => observer.disconnect();
   }, []);
 
+  // Load CSV data if dataSource is provided
+  useEffect(() => {
+    if (!config.dataSource) {
+      // No dataSource, use inline data
+      setResolvedConfig(config);
+      setDataError(null);
+      return;
+    }
+
+    if (config.dataSource.type !== 'csv') {
+      // Only CSV is supported for now
+      setDataError(`Unsupported data source type: ${config.dataSource.type}`);
+      return;
+    }
+
+    // Fetch and parse CSV
+    const loadCSVData = async () => {
+      setIsLoadingData(true);
+      setDataError(null);
+
+      const dataSource = config.dataSource!; // Already checked above
+      console.log('[DynamicChart] Loading CSV data from:', dataSource.url);
+
+      try {
+        const { categories, series } = await fetchAndParseCSV(
+          dataSource.url,
+          dataSource.xColumn,
+          dataSource.yColumns,
+          dataSource.parseOptions
+        );
+
+        console.log('[DynamicChart] CSV data loaded successfully:', { categories: categories.length, series: series.length });
+
+        // Merge CSV data with config
+        setResolvedConfig({
+          ...config,
+          categories,
+          series,
+        });
+      } catch (error) {
+        console.error('[DynamicChart] Failed to load CSV data:', error);
+        setDataError(error instanceof Error ? error.message : 'Failed to load CSV data');
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    loadCSVData();
+  }, [config]);
+
   // Initialize chart once
   useEffect(() => {
     if (!ref.current) return;
@@ -331,19 +385,22 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
     };
   }, []);
 
-  // Update chart when config or theme changes
+  // Update chart when resolved config or theme changes
   useEffect(() => {
     if (!chartRef.current) return;
+    if (isLoadingData) return; // Wait for data to load
+    if (dataError) return; // Don't render if there's an error
+    if (!resolvedConfig.series || resolvedConfig.series.length === 0) return; // Need series data
 
-    // Build ECharts option from config
+    // Build ECharts option from resolved config
     const option: echarts.EChartsOption = {
       backgroundColor: "transparent",
       title: {
-        text: config.title,
+        text: resolvedConfig.title,
         textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
       },
       tooltip: (() => {
-        const tooltipOptions = (config.options?.tooltip as any) || {};
+        const tooltipOptions = (resolvedConfig.options?.tooltip as any) || {};
         // Convert Python-style formatter to JavaScript function
         if (tooltipOptions.formatter && typeof tooltipOptions.formatter === 'string') {
           const formatterStr = tooltipOptions.formatter;
@@ -367,17 +424,17 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
         };
       })(),
       grid: {
-        top: config.options?.legend === false ? 50 : 80,
+        top: resolvedConfig.options?.legend === false ? 50 : 80,
         left: "3%",
         right: "4%",
         bottom: "3%",
         containLabel: true,
-        ...(config.options?.grid || {}),
+        ...(resolvedConfig.options?.grid || {}),
       },
     };
 
     // Handle legend - show by default unless explicitly disabled
-    if (config.options?.legend !== false) {
+    if (resolvedConfig.options?.legend !== false) {
       option.legend = {
         top: 35,
         textStyle: { color: isDark ? "#94a3b8" : "#64748b" },
@@ -385,8 +442,8 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
     }
 
     // Merge any additional options (but after legend handling)
-    if (config.options) {
-      const otherOptions = { ...config.options };
+    if (resolvedConfig.options) {
+      const otherOptions = { ...resolvedConfig.options };
       delete otherOptions.legend;
       delete otherOptions.tooltip;
       delete otherOptions.grid;
@@ -396,16 +453,16 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
     }
 
     // Add xAxis for chart types that need it
-    if (["line", "bar", "area"].includes(config.chartType)) {
+    if (["line", "bar", "area"].includes(resolvedConfig.chartType)) {
       option.xAxis = {
         type: "category",
-        data: config.categories || [],
+        data: resolvedConfig.categories || [],
         axisLine: { lineStyle: { color: isDark ? "#475569" : "#cbd5e1" } },
         axisLabel: { color: isDark ? "#94a3b8" : "#64748b" },
-        ...(config.options?.xAxis || {}),
+        ...(resolvedConfig.options?.xAxis || {}),
       };
       // Process yAxis options and fix formatter if needed
-      const yAxisOptions = (config.options?.yAxis as any) || {};
+      const yAxisOptions = (resolvedConfig.options?.yAxis as any) || {};
       const yAxisLabelOptions = yAxisOptions.axisLabel ? { ...yAxisOptions.axisLabel } : {};
 
       // Convert Python-style formatter to JavaScript function
@@ -432,9 +489,9 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
     }
 
     // Map series with proper typing
-    option.series = config.series.map((s) => ({
+    option.series = resolvedConfig.series.map((s) => ({
       name: s.name,
-      type: (s.type || config.chartType) as any,
+      type: (s.type || resolvedConfig.chartType) as any,
       data: s.data as any,
     }));
 
@@ -443,7 +500,7 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
       notMerge: false, // Merge with existing option for smooth updates
       lazyUpdate: true, // Batch updates for better performance
     });
-  }, [config, isDark, chartId]);
+  }, [resolvedConfig, isDark, chartId]);
 
   const handleDelete = async () => {
     if (!onDelete) return;
@@ -486,7 +543,41 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
         </button>
       )}
 
-      <div ref={ref} className="h-64"></div>
+      {/* Loading state */}
+      {isLoadingData && (
+        <div className="h-64 flex items-center justify-center">
+          <div className="text-center">
+            <svg className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Loading chart data...</p>
+            {config.dataSource?.url && (
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 truncate max-w-xs mx-auto">
+                {config.dataSource.url.split('/').pop()}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Error state */}
+      {!isLoadingData && dataError && (
+        <div className="h-64 flex items-center justify-center">
+          <div className="text-center max-w-md px-4">
+            <svg className="w-12 h-12 mx-auto mb-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-1">Failed to load chart data</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{dataError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Chart container */}
+      {!isLoadingData && !dataError && (
+        <div ref={ref} className="h-64"></div>
+      )}
     </div>
   );
 });

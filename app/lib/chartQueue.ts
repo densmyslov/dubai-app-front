@@ -15,15 +15,40 @@ export interface ChartMessage {
   config?: ChartConfig;
 }
 
+export interface ChartDataSource {
+  type: 'csv' | 'json';
+  url: string;  // Full R2 URL: https://pub-xyz.r2.dev/{userId}/{sessionId}/{requestId}/{taskId}/charts/{filename}.csv
+
+  // Metadata for tracking and debugging
+  userId?: string;      // User who generated this chart
+  requestId?: string;   // Chat request ID
+  taskId?: string;      // Task ID that generated this data
+
+  // CSV-specific options
+  xColumn?: string;     // Column name for X-axis (categories)
+  yColumns?: string[];  // Column names for Y-axis (series)
+  parseOptions?: {
+    delimiter?: string;
+    skipRows?: number;
+    headers?: boolean;
+  };
+}
+
 export interface ChartConfig {
   title: string;
   chartType: 'line' | 'bar' | 'pie' | 'scatter' | 'area';
+
+  // Option 1: Inline data (current approach, for small datasets)
   categories?: string[];
-  series: Array<{
+  series?: Array<{
     name: string;
     data: (number | null)[] | Array<{ value: number; name: string }>;
     type?: string;
   }>;
+
+  // Option 2: External data source (new approach, for large datasets)
+  dataSource?: ChartDataSource;
+
   options?: {
     legend?: boolean;
     grid?: Record<string, unknown>;

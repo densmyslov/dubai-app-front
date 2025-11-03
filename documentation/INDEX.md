@@ -23,6 +23,12 @@ This folder contains all detailed documentation for the Dubai Real Estate Dashbo
   - API reference and examples
   - Session-based chart delivery
 
+- **[CSV_DATA_SOURCE.md](CSV_DATA_SOURCE.md)** - CSV data source for charts
+  - Load chart data from R2/external CSV files
+  - Reduce LLM token costs by separating data from config
+  - R2 storage structure and Lambda implementation
+  - Security and lifecycle management
+
 ### Setup Guides
 
 - **[CHART_KV_SETUP.md](CHART_KV_SETUP.md)** - Cloudflare KV setup
