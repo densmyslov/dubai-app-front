@@ -83,6 +83,12 @@ export default function ChatWindow() {
       }
       sourceRef.current?.close();
       sourceRef.current = null;
+      
+      // Clear webhook message tracking when chat closes
+      webhookMessageIdsRef.current.clear();
+      webhookMessageIdQueueRef.current = [];
+      lastWebhookContentRef.current = null;
+      
       return;
     }
 
@@ -187,6 +193,14 @@ export default function ChatWindow() {
 
           // Non-stream, full message from webhook
           if (payload?.type === "webhook_message") {
+            const messageId = payload?.id;
+            
+            // Deduplicate using message ID
+            if (messageId && webhookMessageIdsRef.current.has(messageId)) {
+              console.log("[ChatWindow] Skipping duplicate webhook message ID:", messageId);
+              return;
+            }
+
             const content: string =
               typeof payload.content === "string"
                 ? payload.content
@@ -194,7 +208,22 @@ export default function ChatWindow() {
                 ? payload.message
                 : JSON.stringify(payload);
 
-            console.log("[ChatWindow] Inserting webhook_message content:", content);
+            console.log("[ChatWindow] Inserting webhook_message content:", content, "ID:", messageId);
+            
+            // Track this message ID to prevent duplicates
+            if (messageId) {
+              webhookMessageIdsRef.current.add(messageId);
+              webhookMessageIdQueueRef.current.push(messageId);
+              
+              // Keep only last 100 IDs in memory to prevent unbounded growth
+              if (webhookMessageIdQueueRef.current.length > 100) {
+                const oldId = webhookMessageIdQueueRef.current.shift();
+                if (oldId) {
+                  webhookMessageIdsRef.current.delete(oldId);
+                }
+              }
+            }
+            
             pushAssistantMessage(content, { skipIfMatching: false });
             lastWebhookContentRef.current = content;
             return;
