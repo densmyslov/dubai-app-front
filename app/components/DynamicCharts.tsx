@@ -342,13 +342,30 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
         text: config.title,
         textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
       },
-      tooltip: {
-        trigger: "axis",
-        backgroundColor: isDark ? "#1e293b" : "#ffffff",
-        borderColor: isDark ? "#475569" : "#e2e8f0",
-        textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
-        ...(config.options?.tooltip || {}),
-      },
+      tooltip: (() => {
+        const tooltipOptions = (config.options?.tooltip as any) || {};
+        // Convert Python-style formatter to JavaScript function
+        if (tooltipOptions.formatter && typeof tooltipOptions.formatter === 'string') {
+          const formatterStr = tooltipOptions.formatter;
+          // Check for Python f-string formatting patterns like {c:,.0f}
+          if (formatterStr.includes(':,')) {
+            tooltipOptions.formatter = (params: any) => {
+              const param = Array.isArray(params) ? params[0] : params;
+              const value = typeof param.value === 'number'
+                ? param.value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+                : param.value;
+              return `${param.name}: ${value}`;
+            };
+          }
+        }
+        return {
+          trigger: "axis",
+          backgroundColor: isDark ? "#1e293b" : "#ffffff",
+          borderColor: isDark ? "#475569" : "#e2e8f0",
+          textStyle: { color: isDark ? "#e2e8f0" : "#1e293b" },
+          ...tooltipOptions,
+        };
+      })(),
       grid: {
         top: config.options?.legend === false ? 50 : 80,
         left: "3%",
@@ -387,12 +404,30 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
         axisLabel: { color: isDark ? "#94a3b8" : "#64748b" },
         ...(config.options?.xAxis || {}),
       };
+      // Process yAxis options and fix formatter if needed
+      const yAxisOptions = (config.options?.yAxis as any) || {};
+      const yAxisLabelOptions = yAxisOptions.axisLabel ? { ...yAxisOptions.axisLabel } : {};
+
+      // Convert Python-style formatter to JavaScript function
+      if (yAxisLabelOptions.formatter && typeof yAxisLabelOptions.formatter === 'string') {
+        const formatterStr = yAxisLabelOptions.formatter;
+        // Check for Python f-string formatting patterns like {value:,.0f}
+        if (formatterStr.includes(':,')) {
+          yAxisLabelOptions.formatter = (value: number) => {
+            return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
+          };
+        }
+      }
+
       option.yAxis = {
         type: "value",
         axisLine: { lineStyle: { color: isDark ? "#475569" : "#cbd5e1" } },
-        axisLabel: { color: isDark ? "#94a3b8" : "#64748b" },
+        axisLabel: {
+          color: isDark ? "#94a3b8" : "#64748b",
+          ...yAxisLabelOptions,
+        },
         splitLine: { lineStyle: { color: isDark ? "#334155" : "#e2e8f0" } },
-        ...(config.options?.yAxis || {}),
+        ...yAxisOptions,
       };
     }
 
