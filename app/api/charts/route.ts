@@ -208,6 +208,25 @@ export async function POST(request: NextRequest) {
 						}
 					);
 				}
+
+				// Validate URL format - must be a valid HTTP(S) URL, not a placeholder
+				const url = ds.url.trim();
+				const isValidUrl = /^https?:\/\/.+/.test(url);
+				const isPlaceholder = /REQUIRED|PLACEHOLDER|TODO|FIXME|METADATA/i.test(url);
+
+				if (!isValidUrl || isPlaceholder) {
+					return NextResponse.json(
+						{
+							error: `dataSource.url must be a valid HTTP(S) URL. Received: "${url}". Placeholders like "METADATA_R2_CSV_URL_REQUIRED" are not allowed.`,
+						},
+						{
+							status: 400,
+							headers: {
+								'Access-Control-Allow-Origin': '*',
+							},
+						}
+					);
+				}
 			}
 		}
 

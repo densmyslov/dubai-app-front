@@ -29,6 +29,14 @@ This folder contains all detailed documentation for the Dubai Real Estate Dashbo
   - R2 storage structure and Lambda implementation
   - Security and lifecycle management
 
+### Troubleshooting
+
+- **[TROUBLESHOOTING_CSV_CHARTS.md](TROUBLESHOOTING_CSV_CHARTS.md)** - CSV chart issues
+  - Fix "Failed to load CSV" errors
+  - Resolve placeholder URL problems
+  - Clear broken charts from KV storage
+  - Backend validation examples
+
 ### Setup Guides
 
 - **[CHART_KV_SETUP.md](CHART_KV_SETUP.md)** - Cloudflare KV setup
