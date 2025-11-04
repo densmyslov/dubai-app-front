@@ -158,15 +158,12 @@ export async function POST(request: NextRequest) {
 			}
 
 			const chartConfig = config as Record<string, unknown>;
-			if (
-				typeof chartConfig.title !== 'string' ||
-				typeof chartConfig.chartType !== 'string' ||
-				!Array.isArray(chartConfig.series)
-			) {
+
+			// Validate required fields
+			if (typeof chartConfig.title !== 'string' || typeof chartConfig.chartType !== 'string') {
 				return NextResponse.json(
 					{
-						error:
-							'config must include title (string), chartType (string), and series (array)',
+						error: 'config must include title (string) and chartType (string)',
 					},
 					{
 						status: 400,
@@ -175,6 +172,42 @@ export async function POST(request: NextRequest) {
 						},
 					}
 				);
+			}
+
+			// Validate data source: either inline series OR external dataSource
+			const hasSeries = Array.isArray(chartConfig.series);
+			const hasDataSource = typeof chartConfig.dataSource === 'object' && chartConfig.dataSource !== null;
+
+			if (!hasSeries && !hasDataSource) {
+				return NextResponse.json(
+					{
+						error: 'config must include either series (array) for inline data or dataSource (object) for external data',
+					},
+					{
+						status: 400,
+						headers: {
+							'Access-Control-Allow-Origin': '*',
+						},
+					}
+				);
+			}
+
+			// If dataSource is provided, validate its structure
+			if (hasDataSource) {
+				const ds = chartConfig.dataSource as Record<string, unknown>;
+				if (typeof ds.url !== 'string' || !ds.url.trim()) {
+					return NextResponse.json(
+						{
+							error: 'dataSource must include a valid url (string)',
+						},
+						{
+							status: 400,
+							headers: {
+								'Access-Control-Allow-Origin': '*',
+							},
+						}
+					);
+				}
 			}
 		}
 
