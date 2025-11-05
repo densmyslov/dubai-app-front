@@ -544,6 +544,53 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
         lazyUpdate: true, // Batch updates for better performance
       });
       console.log('[DynamicChart] ECharts setOption successful');
+
+      // Force resize to ensure canvas renders
+      chartRef.current.resize();
+      console.log('[DynamicChart] ECharts resize called');
+
+      // Check canvas state immediately after setOption
+      const canvasImmediate = ref.current?.querySelector('canvas');
+      console.log('[DynamicChart] Canvas check immediately after setOption:', {
+        exists: !!canvasImmediate,
+        width: canvasImmediate?.width,
+        height: canvasImmediate?.height,
+        refCurrent: !!ref.current,
+        refCurrentChildren: ref.current?.children.length,
+      });
+
+      // Check canvas state after next frame
+      requestAnimationFrame(() => {
+        const canvasAfterRAF = ref.current?.querySelector('canvas');
+        console.log('[DynamicChart] Canvas check after requestAnimationFrame:', {
+          exists: !!canvasAfterRAF,
+          width: canvasAfterRAF?.width,
+          height: canvasAfterRAF?.height,
+          refCurrent: !!ref.current,
+          refCurrentChildren: ref.current?.children.length,
+          refCurrentInnerHTML: ref.current?.innerHTML.substring(0, 200),
+        });
+
+        // If still no canvas, try logging the full DOM structure
+        if (!canvasAfterRAF && ref.current) {
+          console.error('[DynamicChart] NO CANVAS AFTER RAF! Container structure:', {
+            outerHTML: ref.current.outerHTML.substring(0, 500),
+            chartRefExists: !!chartRef.current,
+            chartRefDisposed: chartRef.current?.isDisposed(),
+          });
+        }
+      });
+
+      // Also check after a longer delay to rule out timing issues
+      setTimeout(() => {
+        const canvasAfterDelay = ref.current?.querySelector('canvas');
+        console.log('[DynamicChart] Canvas check after 100ms delay:', {
+          exists: !!canvasAfterDelay,
+          width: canvasAfterDelay?.width,
+          height: canvasAfterDelay?.height,
+        });
+      }, 100);
+
     } catch (error) {
       console.error('[DynamicChart] ECharts setOption failed:', error);
     }
