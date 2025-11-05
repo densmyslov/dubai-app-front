@@ -387,10 +387,32 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
 
   // Update chart when resolved config or theme changes
   useEffect(() => {
-    if (!chartRef.current) return;
-    if (isLoadingData) return; // Wait for data to load
-    if (dataError) return; // Don't render if there's an error
-    if (!resolvedConfig.series || resolvedConfig.series.length === 0) return; // Need series data
+    if (!chartRef.current) {
+      console.log('[DynamicChart] Chart ref not ready yet');
+      return;
+    }
+    if (isLoadingData) {
+      console.log('[DynamicChart] Still loading data, skipping render');
+      return;
+    }
+    if (dataError) {
+      console.log('[DynamicChart] Data error, skipping render:', dataError);
+      return;
+    }
+    if (!resolvedConfig.series || resolvedConfig.series.length === 0) {
+      console.log('[DynamicChart] No series data, skipping render. resolvedConfig:', resolvedConfig);
+      return;
+    }
+
+    console.log('[DynamicChart] Rendering chart with config:', {
+      chartId,
+      title: resolvedConfig.title,
+      chartType: resolvedConfig.chartType,
+      categoriesCount: resolvedConfig.categories?.length,
+      categories: resolvedConfig.categories,
+      seriesCount: resolvedConfig.series.length,
+      series: resolvedConfig.series,
+    });
 
     // Build ECharts option from resolved config
     const option: echarts.EChartsOption = {
