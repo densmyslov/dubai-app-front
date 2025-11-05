@@ -37,8 +37,15 @@ export async function fetchAndParseCSV(
   const skipRows = options?.skipRows || 0;
   const hasHeaders = options?.headers !== false; // Default true
 
-  // Fetch CSV
-  const response = await fetch(url);
+  // Fetch CSV - use proxy for R2 URLs to handle CORS
+  const isR2Url = url.includes('.r2.dev/') || url.includes('.r2.cloudflarestorage.com/');
+  const fetchUrl = isR2Url
+    ? `/api/charts/csv?url=${encodeURIComponent(url)}`
+    : url;
+
+  console.log('[csvParser] Fetching CSV:', isR2Url ? `${url} (via proxy)` : url);
+
+  const response = await fetch(fetchUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch CSV: ${response.status} ${response.statusText}`);
   }
