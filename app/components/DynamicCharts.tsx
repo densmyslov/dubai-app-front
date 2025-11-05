@@ -518,11 +518,24 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
     }));
 
     // Use setOption with notMerge: false to update existing chart smoothly
-    chartRef.current.setOption(option, {
-      notMerge: false, // Merge with existing option for smooth updates
-      lazyUpdate: true, // Batch updates for better performance
+    console.log('[DynamicChart] Calling ECharts setOption with:', {
+      hasTitle: !!option.title,
+      hasXAxis: !!option.xAxis,
+      hasYAxis: !!option.yAxis,
+      seriesCount: option.series?.length,
+      xAxisDataLength: (option.xAxis as any)?.data?.length,
     });
-  }, [resolvedConfig, isDark, chartId]);
+
+    try {
+      chartRef.current.setOption(option, {
+        notMerge: false, // Merge with existing option for smooth updates
+        lazyUpdate: true, // Batch updates for better performance
+      });
+      console.log('[DynamicChart] ECharts setOption successful');
+    } catch (error) {
+      console.error('[DynamicChart] ECharts setOption failed:', error);
+    }
+  }, [resolvedConfig, isDark, chartId, isLoadingData, dataError]);
 
   const handleDelete = async () => {
     if (!onDelete) return;
