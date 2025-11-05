@@ -371,14 +371,26 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
 
   // Initialize chart once
   useEffect(() => {
-    if (!ref.current) return;
+    if (!ref.current) {
+      console.log('[DynamicChart] Init skipped: ref.current is null');
+      return;
+    }
 
-    chartRef.current = echarts.init(ref.current);
+    console.log('[DynamicChart] Initializing ECharts, ref.current:', ref.current);
+
+    try {
+      chartRef.current = echarts.init(ref.current);
+      console.log('[DynamicChart] ECharts initialized successfully, chartRef:', chartRef.current);
+    } catch (error) {
+      console.error('[DynamicChart] ECharts initialization failed:', error);
+      return;
+    }
 
     const onResize = () => chartRef.current?.resize();
     window.addEventListener("resize", onResize);
 
     return () => {
+      console.log('[DynamicChart] Cleaning up ECharts instance');
       window.removeEventListener("resize", onResize);
       chartRef.current?.dispose();
       chartRef.current = null;
