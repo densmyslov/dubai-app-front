@@ -37,13 +37,19 @@ export async function fetchAndParseCSV(
   const skipRows = options?.skipRows || 0;
   const hasHeaders = options?.headers !== false; // Default true
 
-  // Fetch CSV - use proxy for R2 URLs to handle CORS
+  // Fetch CSV - use proxy only for non-presigned R2 URLs
+  // Presigned URLs have auth embedded (X-Amz-Signature query params) and work directly
+  const isPresignedUrl = url.includes('X-Amz-Signature') || url.includes('X-Amz-Credential');
   const isR2Url = url.includes('.r2.dev/') || url.includes('.r2.cloudflarestorage.com/');
-  const fetchUrl = isR2Url
+  const needsProxy = isR2Url && !isPresignedUrl;
+
+  const fetchUrl = needsProxy
     ? `/api/charts/csv?url=${encodeURIComponent(url)}`
     : url;
 
-  console.log('[csvParser] Fetching CSV:', isR2Url ? `${url} (via proxy)` : url);
+  console.log('[csvParser] Fetching CSV:',
+    isPresignedUrl ? `${url.split('?')[0]} (presigned)` :
+    needsProxy ? `${url} (via proxy)` : url);
 
   const response = await fetch(fetchUrl);
   if (!response.ok) {

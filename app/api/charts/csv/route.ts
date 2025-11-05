@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
 				'Access-Control-Allow-Origin': '*',
 				'Access-Control-Allow-Methods': 'GET, OPTIONS',
 				'Access-Control-Allow-Headers': 'Content-Type',
-				'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+				'Cache-Control': 'public, max-age=18000', // Cache for 5 hours
 			},
 		});
 	} catch (error) {
