@@ -20,7 +20,8 @@ function dedupeConsecutiveMessages(messages: Message[]): Message[] {
   return result;
 }
 
-const FETCH_TIMEOUT_MS = Number(process.env.CHAT_FETCH_TIMEOUT_MS ?? 30_000);
+// Timeout for Lambda response (3 minutes to match Lambda timeout)
+const FETCH_TIMEOUT_MS = Number(process.env.CHAT_FETCH_TIMEOUT_MS ?? 180_000);
 
 async function getApiAuthToken(): Promise<string | null> {
   return process.env.KEY || null;
@@ -149,106 +150,99 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Lambda Function URLs always return JSON-wrapped responses
-    // Try to parse as JSON first, fall back to text if that fails
-    let sseBody: string;
-    const responseText = await upstream.text();
+    // Lambda RESPONSE_STREAM mode streams directly - don't buffer!
+    // Stream and transform chunks as they arrive
+    console.log('[chat] Starting to stream Lambda response');
 
-    try {
-      // Try parsing as AWS Lambda JSON response format
-      const lambdaResponse = JSON.parse(responseText) as { statusCode?: number; body?: string; headers?: Record<string, string> };
-
-      if (lambdaResponse.statusCode && lambdaResponse.body !== undefined) {
-        // This is AWS Lambda JSON format
-        if (lambdaResponse.statusCode !== 200) {
-          console.error('Lambda error response:', lambdaResponse);
-          return new Response(lambdaResponse.body || 'Lambda error', { status: lambdaResponse.statusCode });
-        }
-
-        sseBody = lambdaResponse.body;
-        console.log('Unwrapped Lambda JSON response, SSE body length:', sseBody.length);
-        console.log('First 500 chars:', sseBody.substring(0, 500));
-      } else {
-        // JSON but not Lambda format, treat as SSE body
-        sseBody = responseText;
-        console.log('Direct response (JSON but not Lambda format), body length:', sseBody.length);
-      }
-    } catch (parseError) {
-      // Not JSON, use as-is (direct SSE stream)
-      sseBody = responseText;
-      console.log('Direct Lambda stream, body length:', sseBody.length);
-      console.log('First 500 chars:', sseBody.substring(0, 500));
-    }
-
-    // Transform the SSE stream to inject metadata
     const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
 
     const transformedStream = new ReadableStream({
       async start(controller) {
+        if (!upstream.body) {
+          console.error('[chat] No upstream body');
+          controller.close();
+          return;
+        }
+
+        const reader = upstream.body.getReader();
+        let buffer = '';
+        let eventCount = 0;
+
         try {
-          // Process complete SSE events delimited by blank line
-          const events = sseBody.split('\n\n');
-          console.log(`[chat] Processing ${events.length} SSE events from Lambda`);
+          while (true) {
+            const { done, value } = await reader.read();
 
-          for (const event of events) {
-            if (!event.trim()) {
-              continue;
+            if (done) {
+              console.log(`[chat] Stream completed, processed ${eventCount} events`);
+              break;
             }
 
-            // Collect all data lines (support multi-line data payloads)
-            const dataLines = event
-              .split('\n')
-              .filter((l) => l.startsWith('data: '))
-              .map((l) => l.slice(6));
+            // Decode chunk and add to buffer
+            buffer += decoder.decode(value, { stream: true });
 
-            if (dataLines.length === 0) {
-              // passthrough non-data lines (event:, id:, retry:, comments, etc.)
-              controller.enqueue(encoder.encode(event + '\n\n'));
-              continue;
-            }
+            // Process complete SSE events (delimited by \n\n)
+            let boundary = buffer.indexOf('\n\n');
+            while (boundary !== -1) {
+              const event = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
 
-            const dataPayload = dataLines.join('');
-            if (dataPayload === '[DONE]') {
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-              continue;
-            }
+              if (event.trim()) {
+                eventCount++;
 
-            try {
-              const parsed = JSON.parse(dataPayload) as {
-                type?: string;
-                metadata?: Record<string, unknown>;
-                [k: string]: unknown;
-              };
+                // Extract data lines from event
+                const dataLines = event
+                  .split('\n')
+                  .filter((l) => l.startsWith('data: '))
+                  .map((l) => l.slice(6));
 
-              // Inject metadata
-              parsed.metadata = { ...(parsed.metadata ?? {}), user_id: userId };
+                if (dataLines.length === 0) {
+                  // Pass through non-data lines (event:, id:, etc.)
+                  controller.enqueue(encoder.encode(event + '\n\n'));
+                } else {
+                  const dataPayload = dataLines.join('');
 
-              const modified = 'data: ' + JSON.stringify(parsed) + '\n\n';
-              controller.enqueue(encoder.encode(modified));
+                  if (dataPayload === '[DONE]') {
+                    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                  } else {
+                    try {
+                      const parsed = JSON.parse(dataPayload) as {
+                        type?: string;
+                        metadata?: Record<string, unknown>;
+                        [k: string]: unknown;
+                      };
 
-              // Debug log
-              if (parsed.type === 'chunk') {
-                const textValue = typeof parsed.text === 'string' ? parsed.text : '';
-                console.log('Chunk forwarded:', {
-                  user_id: userId,
-                  text_length: textValue.length,
-                  text_preview: textValue.substring(0, 50),
-                });
-              } else {
-                console.log('Event forwarded:', { user_id: userId, type: parsed.type });
+                      // Inject metadata
+                      parsed.metadata = { ...(parsed.metadata ?? {}), user_id: userId };
+
+                      const modified = 'data: ' + JSON.stringify(parsed) + '\n\n';
+                      controller.enqueue(encoder.encode(modified));
+
+                      // Debug log (only for non-chunk events to reduce noise)
+                      if (parsed.type !== 'chunk') {
+                        console.log('[chat] Event forwarded:', { type: parsed.type, user_id: userId });
+                      }
+                    } catch (parseError) {
+                      console.error('[chat] Failed to parse SSE event:', dataPayload.substring(0, 100));
+                      // Pass through unparseable data
+                      controller.enqueue(encoder.encode('data: ' + dataPayload + '\n\n'));
+                    }
+                  }
+                }
               }
-            } catch (parseError) {
-              console.error('[chat] Failed to parse SSE event:', parseError, 'payload:', dataPayload.substring(0, 100));
-              controller.enqueue(encoder.encode('data: ' + dataPayload + '\n\n'));
-            }
 
-            // Add small delay between events to ensure proper streaming
-            await new Promise(resolve => setTimeout(resolve, 10));
+              boundary = buffer.indexOf('\n\n');
+            }
           }
 
-          console.log(`[chat] Finished processing all SSE events`);
+          // Flush any remaining buffer
+          if (buffer.trim()) {
+            console.log('[chat] Flushing remaining buffer:', buffer.substring(0, 100));
+            controller.enqueue(encoder.encode(buffer + '\n\n'));
+          }
         } catch (error) {
-          console.error('Stream transform error:', error);
+          console.error('[chat] Stream processing error:', error);
+          controller.error(error);
         } finally {
           controller.close();
         }
