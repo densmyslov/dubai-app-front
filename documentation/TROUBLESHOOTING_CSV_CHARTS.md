@@ -70,6 +70,115 @@ wrangler r2 bucket cors put dubai-real-estate-data \
 
 ---
 
+## Error: 401 Unauthorized when fetching CSV
+
+### Symptoms
+
+You see a 401 error in the browser console:
+
+```
+/api/charts/csv?url=https://pub-xxx.r2.dev/.../charts/file.csv:1 Failed to load resource: the server responded with a status of 401
+[DynamicChart] Failed to load CSV data: Error: Failed to fetch CSV: 401
+```
+
+The CSV proxy is working (CORS is resolved), but R2 is rejecting the request.
+
+### Root Cause
+
+The R2 bucket is **private** and requires authentication. Public URLs (like `https://pub-xxx.r2.dev/...`) don't work for private buckets.
+
+### Solution 1: Use Presigned URLs (Recommended)
+
+Generate presigned URLs in your backend that include temporary authentication:
+
+```python
+import boto3
+from datetime import timedelta
+
+s3 = boto3.client('s3')
+
+# Upload CSV as before
+s3.put_object(
+    Bucket='dubai-real-estate-data',
+    Key=csv_key,
+    Body=csv_data,
+    ContentType='text/csv'
+)
+
+# Generate presigned URL (valid for 1 hour)
+csv_url = s3.generate_presigned_url(
+    'get_object',
+    Params={
+        'Bucket': 'dubai-real-estate-data',
+        'Key': csv_key
+    },
+    ExpiresIn=3600  # 1 hour
+)
+
+# Use presigned URL in manifest
+manifest = {
+    'config': {
+        'dataSource': {
+            'type': 'csv',
+            'url': csv_url,  # ✅ Presigned URL with authentication
+            'xColumn': 'month',
+            'yColumns': ['units_sold']
+        }
+    }
+}
+```
+
+**Presigned URLs automatically work through the CSV proxy** - no frontend changes needed!
+
+**Pros:**
+- ✅ Secure: Time-limited access
+- ✅ Private bucket: Data not publicly accessible
+- ✅ Works with proxy: No code changes needed
+
+**Cons:**
+- ⏱️ URLs expire (default: 1 hour)
+- 📦 No CDN caching (URLs are unique per request)
+
+### Solution 2: Make R2 Bucket Public (Simple but Less Secure)
+
+If your data is not sensitive, you can make the bucket public:
+
+**Using wrangler CLI:**
+```bash
+# This requires configuring bucket policies
+# See Cloudflare R2 docs for public bucket configuration
+```
+
+**Note:** Public buckets expose all data to anyone with the URL. Use presigned URLs for sensitive data.
+
+### Solution 3: Use S3-Compatible Credentials in Proxy (Advanced)
+
+If you need the proxy to authenticate with R2 on behalf of clients, you can add AWS credentials to the proxy. However, this is complex and **presigned URLs (Solution 1) are recommended instead**.
+
+### Quick Test: Is Your Bucket Private?
+
+Test the CSV URL directly in your browser:
+
+```bash
+# Copy the R2 URL from the error message
+# Open in browser or use curl
+curl -I https://pub-xxx.r2.dev/results/0000/.../charts/task_1.csv
+```
+
+**Expected Results:**
+- **200 OK** = Bucket is public (CORS was the only issue)
+- **401 Unauthorized** = Bucket is private (need presigned URLs)
+- **403 Forbidden** = Bucket policy blocking access
+
+### Recommended Approach
+
+**For production:** Use presigned URLs (Solution 1)
+- Secure and works with the CSV proxy
+- No frontend changes required
+- Backend generates presigned URLs before posting chart manifests
+
+---
+
 ## Error: Failed to load CSV with placeholder URL
 
 ### Symptoms

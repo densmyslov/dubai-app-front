@@ -32,8 +32,9 @@ This folder contains all detailed documentation for the Dubai Real Estate Dashbo
 ### Troubleshooting
 
 - **[TROUBLESHOOTING_CSV_CHARTS.md](TROUBLESHOOTING_CSV_CHARTS.md)** - CSV chart issues
-  - Fix "Failed to load CSV" errors
-  - Resolve placeholder URL problems
+  - Fix CORS errors with automatic proxy
+  - Resolve 401 authentication issues (presigned URLs)
+  - Fix placeholder URL problems
   - Clear broken charts from KV storage
   - Backend validation examples
 
