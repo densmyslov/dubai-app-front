@@ -1,5 +1,75 @@
 # Troubleshooting CSV Data Source Charts
 
+## Error: CORS policy blocks R2 CSV fetch
+
+### Symptoms
+
+You see a CORS error in the browser console:
+
+```
+Access to fetch at 'https://pub-xxx.r2.dev/.../charts/file.csv' from origin 'https://your-app.pages.dev'
+has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+
+Failed to load resource: net::ERR_FAILED
+[DynamicChart] Failed to load CSV data: TypeError: Failed to fetch
+```
+
+### Root Cause
+
+The R2 bucket doesn't have CORS headers configured, so browsers block direct fetch requests from your frontend domain.
+
+### Solution: Automatic CSV Proxy (Recommended)
+
+**The frontend now automatically proxies R2 requests through `/api/charts/csv`** to bypass CORS restrictions.
+
+The CSV parser ([app/lib/csvParser.ts](../app/lib/csvParser.ts)) detects R2 URLs and routes them through the proxy:
+
+```typescript
+// Automatically uses proxy for R2 URLs
+const isR2Url = url.includes('.r2.dev/') || url.includes('.r2.cloudflarestorage.com/');
+const fetchUrl = isR2Url
+  ? `/api/charts/csv?url=${encodeURIComponent(url)}`  // Proxy
+  : url;  // Direct fetch for non-R2 URLs
+```
+
+**This happens automatically** - no backend changes needed! The proxy:
+- ✅ Fetches CSV from R2 server-side (no CORS restrictions)
+- ✅ Returns CSV with proper CORS headers
+- ✅ Caches responses for 1 hour
+- ✅ Only allows R2 URLs (security measure)
+
+**Status:** If you're seeing CORS errors, ensure the CSV proxy endpoint exists at [app/api/charts/csv/route.ts](../app/api/charts/csv/route.ts). This should be deployed automatically with your app.
+
+### Alternative: Configure R2 CORS (Optional)
+
+If you prefer direct fetches without the proxy, configure CORS on your R2 bucket:
+
+**Using Cloudflare Dashboard:**
+1. Go to R2 → Your Bucket → Settings
+2. Scroll to CORS Policy
+3. Add this configuration:
+
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+**Using wrangler CLI:**
+```bash
+wrangler r2 bucket cors put dubai-real-estate-data \
+  --rules '[{"AllowedOrigins":["*"],"AllowedMethods":["GET"],"AllowedHeaders":["*"],"MaxAgeSeconds":3600}]'
+```
+
+**Note:** Direct R2 access is less secure than using the proxy, as it exposes your R2 bucket publicly. The proxy provides better control and logging.
+
+---
+
 ## Error: Failed to load CSV with placeholder URL
 
 ### Symptoms
