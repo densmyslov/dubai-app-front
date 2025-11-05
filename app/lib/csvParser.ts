@@ -37,24 +37,24 @@ export async function fetchAndParseCSV(
   const skipRows = options?.skipRows || 0;
   const hasHeaders = options?.headers !== false; // Default true
 
-  // Fetch CSV directly from public R2 bucket (CORS enabled)
-  // Public R2 URLs use format: https://pub-{account_id}.r2.dev/{path}
-  // Proxy is available as fallback for private buckets or CORS issues
+  // Fetch CSV via proxy for R2 URLs (public domains don't support CORS)
+  // R2 public domains (pub-*.r2.dev) don't send CORS headers even if configured
+  // CORS only works with custom domains, so we proxy all R2 requests
   const isPublicR2Url = url.includes('pub-') && url.includes('.r2.dev/');
+  const isPrivateR2Url = url.includes('.r2.cloudflarestorage.com/');
   const isPresignedUrl = url.includes('X-Amz-Signature') || url.includes('X-Amz-Credential');
+  const isR2Url = isPublicR2Url || isPrivateR2Url;
 
-  // Use proxy only for private R2 URLs without presigned signatures
-  const isPrivateR2Url = url.includes('.r2.cloudflarestorage.com/') && !isPresignedUrl;
-  const needsProxy = isPrivateR2Url;
+  // Use proxy for all R2 URLs unless they have presigned auth
+  const needsProxy = isR2Url && !isPresignedUrl;
 
   const fetchUrl = needsProxy
     ? `/api/charts/csv?url=${encodeURIComponent(url)}`
     : url;
 
   console.log('[csvParser] Fetching CSV:',
-    isPublicR2Url ? `${url.split('?')[0]} (public R2)` :
-    isPresignedUrl ? `${url.split('?')[0]} (presigned)` :
-    needsProxy ? `${url} (via proxy)` : url);
+    needsProxy ? `${url.split('?')[0]} (R2 via proxy)` :
+    isPresignedUrl ? `${url.split('?')[0]} (presigned)` : url);
 
   const response = await fetch(fetchUrl);
   if (!response.ok) {
