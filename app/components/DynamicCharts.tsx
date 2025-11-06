@@ -435,11 +435,21 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
       },
       tooltip: (() => {
         const tooltipOptions = (resolvedConfig.options?.tooltip as any) || {};
-        // Convert Python-style formatter to JavaScript function
+        // Convert formatter strings to JavaScript functions
         if (tooltipOptions.formatter && typeof tooltipOptions.formatter === 'string') {
           const formatterStr = tooltipOptions.formatter;
+
+          // Check if it's a JavaScript function string (starts with "function")
+          if (formatterStr.trim().startsWith('function')) {
+            try {
+              // Convert string to actual function using eval in a safe context
+              tooltipOptions.formatter = eval(`(${formatterStr})`);
+            } catch (error) {
+              console.error('[DynamicChart] Failed to parse tooltip formatter:', error);
+            }
+          }
           // Check for Python f-string formatting patterns like {c:,.0f}
-          if (formatterStr.includes(':,')) {
+          else if (formatterStr.includes(':,')) {
             tooltipOptions.formatter = (params: any) => {
               const param = Array.isArray(params) ? params[0] : params;
               const value = typeof param.value === 'number'
@@ -499,11 +509,21 @@ const DynamicChart: React.FC<DynamicChartProps> = React.memo(({ chartId, config,
       const yAxisOptions = (resolvedConfig.options?.yAxis as any) || {};
       const yAxisLabelOptions = yAxisOptions.axisLabel ? { ...yAxisOptions.axisLabel } : {};
 
-      // Convert Python-style formatter to JavaScript function
+      // Convert formatter strings to JavaScript functions
       if (yAxisLabelOptions.formatter && typeof yAxisLabelOptions.formatter === 'string') {
         const formatterStr = yAxisLabelOptions.formatter;
+
+        // Check if it's a JavaScript function string (starts with "function")
+        if (formatterStr.trim().startsWith('function')) {
+          try {
+            // Convert string to actual function using eval in a safe context
+            yAxisLabelOptions.formatter = eval(`(${formatterStr})`);
+          } catch (error) {
+            console.error('[DynamicChart] Failed to parse yAxis formatter:', error);
+          }
+        }
         // Check for Python f-string formatting patterns like {value:,.0f}
-        if (formatterStr.includes(':,')) {
+        else if (formatterStr.includes(':,')) {
           yAxisLabelOptions.formatter = (value: number) => {
             return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
           };
