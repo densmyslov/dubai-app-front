@@ -153,3 +153,42 @@ See [app/api/webhook/WEBHOOK.md](app/api/webhook/WEBHOOK.md) for the complete in
 ## Notes
 - Keep heavy compute in ETL. The site only fetches pre-aggregated JSON.
 - Add auth/lead capture later (Turnstile + a Worker POST to HubSpot/Airtable).
+
+## ECharts Container Lifecycle Fix (Conditional Rendering)
+
+### The Problem
+
+Conditional rendering was unmounting the chart container during CSV load, breaking the ECharts instance:
+
+1. Component mounts → chart `<div>` renders → ECharts initializes ✓
+2. CSV loading starts → `isLoadingData = true`
+3. Chart `<div>` gets unmounted due to `{!isLoadingData && <div ref={ref}>}`
+4. CSV finishes → `isLoadingData = false` → a new `<div>` mounts
+5. `chartRef.current` still points to the old ECharts instance (bound to the old, unmounted `<div>`)
+6. `setOption()` updates the old instance → no visible chart
+
+### The Solution
+
+Always render the chart container, and overlay loading/error states instead of conditionally mounting the container.
+
+Before:
+
+```tsx
+{isLoadingData && <div>Loading...</div>}
+{!isLoadingData && !dataError && <div ref={ref} className="h-64"></div>}
+```
+
+After:
+
+```tsx
+<div className="relative">
+  <div ref={ref} className="h-64"></div>  {/* Always rendered */}
+  {isLoadingData && <div className="absolute inset-0 flex items-center justify-center bg-white/70">Loading...</div>}
+  {dataError && <div className="absolute inset-0 flex items-center justify-center bg-red-50/80 text-red-700">Error loading data</div>}
+  {/* Optionally hide the chart visually during load with opacity if desired */}
+  {/* <div ref={ref} className={cn('h-64 transition-opacity', isLoadingData ? 'opacity-0' : 'opacity-100')} /> */}
+  
+}
+```
+
+With the container never unmounted, ECharts stays attached to the same DOM element for the whole lifecycle. Refresh and try generating a chart again; it should display correctly with CSV data.
